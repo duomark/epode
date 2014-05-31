@@ -1,0 +1,15 @@
+%%-*- mode: erlang -*-
+%% -*- tab-width: 4;erlang-indent-level: 4;indent-tabs-mode: nil -*-
+%% ex: ts=4 sw=4 et
+
+{application, epode,
+ [
+  {id, "epode"},
+  {vsn, "0.1.0"},
+  {description, "Erlang Persistable Object Dictionary Elements"},
+  {modules,      []},
+  {registered,   []},
+  {applications, [kernel, stdlib, sasl]},
+  {included_applications, [repdis, vbisect]},
+  {env, []}
+ ]}.

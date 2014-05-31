@@ -1,0 +1,10 @@
+%%-*- mode: erlang -*-
+%% -*- tab-width: 4;erlang-indent-level: 4;indent-tabs-mode: nil -*-
+%% ex: ts=4 sw=4 et
+
+{export, "./epode/logs/cover"}.
+{level, details}.
+{incl_dirs, ["src/"]}.
+{incl_mods, [
+             epode_dict
+            ]}.

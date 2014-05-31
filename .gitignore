@@ -1,6 +1,10 @@
+.erlang.mk*
 .eunit
 deps
+ebin
+logs
 *.o
 *.beam
 *.plt
 erl_crash.dump
+*~
