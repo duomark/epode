@@ -13,60 +13,150 @@
 -author('Jay Nelson <jay@duomark.com>').
 
 %% External interface
--export([new/1, is_dict/2, size/1]).
+-export([
+         new/2,
+         is_dict/1,
+         map/3,
+         xlate/3,
+         from_list/3,
+         size/1
+        ]).
 
 -include("epode.hrl").
+
 
 %%%------------------------------------------------------------------------------
 %% Construct and validate dictionary types
 %%%------------------------------------------------------------------------------
--spec new      (epode_dict_type())                        -> epode_dict_instance().
--spec is_dict  (epode_dict_type(), epode_dict_instance()) -> boolean().
 
-new(dict)    -> dict:new();
-new(orddict) -> orddict:new();
-new(vbisect) -> vbisect:from_orddict([]).
+%% Mapping has the potential to change all values.
+-type map_fn()   :: fun((Key1::epode_attr(), Value1::epode_value())
+                        -> Value2::epode_value()).
+
+%% Translation has the potential to change all keys and values.
+-type xlate_fn() :: fun((Key1::epode_attr(), Value1::epode_value())
+                        -> {Key2::epode_attr(), Value2::epode_value()} | undefined).
+
+-type dict_list(Key_Type, Val_Type) :: [{Key_Type, Val_Type}].
+-type binary_dict_list() :: dict_list(binary(), binary()).
+-type atom_dict_list()   :: dict_list(atom(),   any()).
+-type any_dict_list()    :: dict_list(any(),    any()).
+
+-spec new       (epode_keyval_binary_type(), epode_bdict_type()) -> epode_bin_dict();
+                (epode_keyval_atom_type(),   epode_edict_type()) -> epode_atom_dict();
+                (epode_keyval_any_type(),    epode_edict_type()) -> epode_any_dict().
+
+-spec is_dict   (any()) -> boolean().
+
+-spec map       (map_fn(),   epode_dict(), epode_all_dict_type()) -> epode_dict().
+-spec xlate     (xlate_fn(), epode_dict(), epode_all_dict_type()) -> epode_dict().
+
+-spec from_list (epode_keyval_binary_type(), epode_bdict_type(),     binary_dict_list()) -> epode_bin_dict();
+                (epode_keyval_atom_type(),   epode_atom_dict_type(), atom_dict_list())   -> epode_atom_dict();
+                (epode_keyval_any_type(),    epode_any_dict_type(),  any_dict_list())    -> epode_any_dict().
+
+
+%% Internally determine what type a dictionary is because of differing APIs.
+dict_type({dict,    _Any_Keyval_Type, Bare_Dict}) -> valid_dict(dict,    Bare_Dict);
+dict_type({orddict, _Any_Keyval_Type, Bare_Dict}) -> valid_dict(orddict, Bare_Dict);
+dict_type({vbisect, pure_binary,      Bare_Dict}) -> valid_dict(vbisect, Bare_Dict);
+dict_type(_Incorrect_Format)                      -> not_a_dict.
+
+valid_dict(Dict_Type, Bare_Dict) ->
+    case is_dict(Dict_Type, Bare_Dict) of
+        true  -> Dict_Type;
+        false -> not_a_dict
+    end.
 
 
 %% OTP doesn't provide is_dict types, so this is a low-level hack for convenience.
 %% TODO: submit patches to vbisect and OTP to make is_dict/1 a standard API call.
-is_dict(dict,        Dict) when is_tuple (Dict) -> dict =:= element(1, Dict);
-is_dict(dict, _Not_A_Dict)                      -> false;
+is_dict(dict,   Bare_Dict)
+  when element(1, Bare_Dict) =:= dict  -> true;    % close enough, doesn't check tuple size
+is_dict(dict,             _Not_A_Dict) -> false;
 
 %% We can't scan the whole dictionary, or verify that it is sorted.
-is_dict(orddict,                [])             -> true;
-is_dict(orddict, [{_K,_V} | _Rest])             -> true;
-is_dict(orddict,       _Not_A_Dict)             -> false;
+is_dict(orddict,                   []) -> true;
+is_dict(orddict,    [{_K,_V} | _Rest]) -> true;
+is_dict(orddict,          _Not_A_Dict) -> false;
 
 %% Vbisects have a fast internal validation function.
-is_dict(vbisect,  Dict)                         -> vbisect:is_vbisect(Dict).
+is_dict(vbisect,            Bare_Dict) -> vbisect:is_vbisect(Bare_Dict).
 
 
-%% Internally determine what type a dictionary is because of differing APIs.
-dict_type(Dict) ->
-    %% This should be a cond statement if we had one!
-    case is_dict(dict, Dict) of
-        true  -> dict;
-        false -> case is_dict(orddict, Dict) of
-                     true  -> orddict;
-                     false -> case is_dict(vbisect, Dict) of
-                                  true  -> vbisect;
-                                  false -> not_a_dict
-                              end
-                 end
+%% vbisect is the only dictionary that is restricted with key value types.
+new(Keyval_Type, dict)    -> {dict,    Keyval_Type, dict   :new()};
+new(Keyval_Type, orddict) -> {orddict, Keyval_Type, orddict:new()};
+new(pure_binary, vbisect) -> {vbisect, pure_binary, vbisect:from_orddict([])}.
+
+
+%% Test if a dict is properly constructed.
+is_dict({Dict_Type, Keyval_Type, Bare_Dict}) -> is_dict(Dict_Type, Bare_Dict);
+is_dict(                                  _) -> false.
+    
+
+%% Convert just the values (keeping the old attributes) to generate a new dictionary.
+map(Fun, {_Dict_Type, _Keyval_Type, Bare_Dict} = _Dict, New_Keyval_Type) ->
+    case dict_type(Bare_Dict) of
+        dict    -> {dict,    New_Keyval_Type, dict   :map(Fun, Bare_Dict)};
+        orddict -> {orddict, New_Keyval_Type, orddict:map(Fun, Bare_Dict)};
+        vbisect -> case New_Keyval_Type of
+                       pure_binary -> {vbisect, pure_binary, vbisect:map(Fun, Bare_Dict)}
+                   end
     end.
+
+
+%% Convert both attributes and values to generate a new dictionary.
+-define(MAP_XLATE(__Dict_Type, __New_Keyval_Type, __Fun, __Bare_Dict),
+        __Module = __Dict_Type,
+        {__Module, __New_Keyval_Type,
+         __Module:from_list( xlate_attrs(__Fun, __New_Keyval_Type, __Module:to_list(__Bare_Dict)) )}).
+
+xlate(Fun, {_Dict_Type, _Keyval_Type, Bare_Dict} = Dict, New_Keyval_Type) ->
+    ?MAP_XLATE(dict_type(Dict), New_Keyval_Type, Fun, Bare_Dict).
+
+xlate_attrs(Fun, New_Keyval_Type, Keyval_Pairs) ->
+    lists:foldl(fun({Attr, Value}, New_Pair_List) ->
+                        case {New_Keyval_Type, Fun(Attr, Value)} of
+
+                            %% Both Attribute and Value must be binary...
+                            {pure_binary, {_New_Attr, _New_Value} = New_Pair}
+                              when is_binary(_New_Attr), is_binary(_New_Value) -> 
+                                [New_Pair | New_Pair_List];
+
+                            %% Attribute must be atom, Value can be anything...
+                            {atom_attrs, {_New_Attr, _New_Value} = New_Pair}
+                              when is_atom(_New_Attr) ->
+                                [New_Pair | New_Pair_List];
+
+                            %% Both Attribute and Value can be anything...
+                            {any, {_New_Attr, _New_Value} = New_Pair} ->
+                                [New_Pair | New_Pair_List];
+
+                            %% Attribute is dropped from new dictionary results.
+                            {New_Keyval_Type, undefined} ->
+                                New_Pair_List
+                        end
+                end, [], Keyval_Pairs).
+
+%% Construct a dictionary from a list of Attribute / Value pairs.
+from_list(dict,    Keyval_Type, Attrs) -> {dict,    Keyval_Type, dict   :from_list(Attrs)};
+from_list(orddict, Keyval_Type, Attrs) -> {orddict, Keyval_Type, orddict:from_list(Attrs)};
+from_list(vbisect, pure_binary, Attrs) -> {vbisect, pure_binary, vbisect:from_list(Attrs)}.
 
 
 %%%------------------------------------------------------------------------------
 %% API to access dictionary meta-attributes
 %%%------------------------------------------------------------------------------
--spec size(epode_dict_instance()) -> non_neg_integer() | not_a_dict.
+-spec size(any()) -> non_neg_integer() | not_a_dict.
 
-size(Dict) -> size(dict_type(Dict), Dict).
+size({_Dict_Type, _Keyval_Type, Bare_Dict} = Dict) -> size(dict_type(Dict), Bare_Dict);
+size(                                           _) -> not_a_dict.
 
-size(dict,        Dict) -> dict    :size(Dict);
-size(orddict,     Dict) -> orddict :size(Dict);
-size(vbisect,     Dict) -> vbisect :size(Dict);
+
+size(dict,        Bare_Dict) -> dict   :size(Bare_Dict);
+size(orddict,     Bare_Dict) -> orddict:size(Bare_Dict);
+size(vbisect,     Bare_Dict) -> vbisect:size(Bare_Dict);
 size(not_a_dict, _Dict) -> not_a_dict.
 
 

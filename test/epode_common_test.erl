@@ -15,7 +15,7 @@
 -export([test_count_wrapper/4]).
 
 
-%% Log and verify results of a single PropEr test case
+%% Log and verify results of a single (repeated) PropEr test case
 test_count_wrapper(Log_Stmt, PD_Key, Test_Fn, Num_Tests) ->
     Old_PD_Value = put(PD_Key, []),
     ct:log(Log_Stmt, [Num_Tests]),

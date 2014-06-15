@@ -6,7 +6,7 @@
  [
   {id, "epode"},
   {vsn, "0.1.0"},
-  {description, "Erlang Persistable Object Dictionary Elements"},
+  {description, "Erlang Persistable Object Dictionary Entities"},
   {modules,      []},
   {registered,   []},
   {applications, [kernel, stdlib, sasl]},

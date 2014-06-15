@@ -52,16 +52,19 @@ end_per_group(_Config) -> ok.
 %%%------------------------------------------------------------------------------
 -spec check_new(config()) -> ok.
 check_new(_Config) ->
+    %% PD_Key is the process dictionary key where test results are saved.
     Test_Fn = fun(PD_Key, Num_Tests) ->
-                      Test_New = ?FORALL(Dict_Type, epode_dict_type(),
-                                         valid_empty_dict(Dict_Type, ?TM:new(Dict_Type), PD_Key)),
+                      Test_New = ?FORALL(Dict_Type, epode_all_dict_type(),
+                                         valid_empty_dict(Dict_Type,
+                                                          ?TM:new(pure_binary, Dict_Type),
+                                                          PD_Key)),
                       proper:quickcheck(Test_New, ?PQ_NUM(Num_Tests))
               end,
     Log_Stmt = "Test empty dictionary construction for all dictionary types (~p tests)",
     epode_common_test:test_count_wrapper(Log_Stmt, ct_check_new, Test_Fn, 6).
 
 valid_empty_dict(Dict_Type, Dict, PD_Key) ->
-    true = ?TM:is_dict(Dict_Type, Dict),
+    true = ?TM:is_dict(Dict),
     0 = ?TM:size(Dict),
     put(PD_Key, [Dict_Type | get(PD_Key)]),
     true.
