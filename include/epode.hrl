@@ -22,12 +22,8 @@
 -type epode_keyval_atom_type()       :: atom_attrs.   % atoms for attributes with any values
 -type epode_keyval_any_type()        :: any.          % any type for both attributes and values
 
--type epode_keyval_non_binary_type() :: epode_keyval_atom_type()
-                                      | epode_keyval_any_type().
-
--type epode_keyval_type()            :: epode_keyval_binary_type()
-                                      | epode_keyval_atom_type()
-                                      | epode_keyval_any_type().
+-type epode_keyval_non_binary_type() :: epode_keyval_atom_type()   | epode_keyval_any_type().
+-type epode_keyval_type()            :: epode_keyval_binary_type() | epode_keyval_non_binary_type().
 
 -type epode_any_dict_type()  :: dict | orddict.
 -type epode_atom_dict_type() :: dict | orddict.

@@ -91,8 +91,11 @@ new(pure_binary, vbisect) -> {vbisect, pure_binary, vbisect:from_orddict([])}.
 
 
 %% Test if a dict is properly constructed.
-is_dict({Dict_Type, Keyval_Type, Bare_Dict}) -> is_dict(Dict_Type, Bare_Dict);
-is_dict(                                  _) -> false.
+is_dict(Dict) ->
+    case dict_type(Dict) of
+        not_a_dict -> false;
+        _A_Dict    -> true
+    end.
     
 
 %% Convert just the values (keeping the old attributes) to generate a new dictionary.
