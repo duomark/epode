@@ -51,7 +51,7 @@
 
 
 %% vbisect is the only dictionary that is restricted with key value types.
-new(dict, Keyval_Type)    -> {dict,    Keyval_Type, dict   :new()};
+new(dict,    Keyval_Type) -> {dict,    Keyval_Type, dict   :new()};
 new(orddict, Keyval_Type) -> {orddict, Keyval_Type, orddict:new()};
 new(vbisect, pure_binary) -> {vbisect, pure_binary, vbisect:from_orddict([])}.
 
@@ -76,16 +76,16 @@ to_list(Dict) ->
 make_dict(Attrs) ->
     lists:foldl(fun({Key, Val}, Acc_Dict) ->
                         case dict:is_key(Key, Acc_Dict) of
-                            true  -> dict:store(Key, Val, Acc_Dict);
-                            false -> Acc_Dict
+                            false -> dict:store(Key, Val, Acc_Dict);
+                            true  -> Acc_Dict
                         end
                 end, dict:new(), Attrs).
 
 make_orddict(Attrs) ->    
     lists:foldl(fun({Key, Val}, Acc_Dict) ->
                         case orddict:is_key(Key, Acc_Dict) of
-                            true  -> orddict:store(Key, Val, Acc_Dict);
-                            false -> Acc_Dict
+                            false -> orddict:store(Key, Val, Acc_Dict);
+                            true  -> Acc_Dict
                         end
                 end, orddict:new(), Attrs).
 

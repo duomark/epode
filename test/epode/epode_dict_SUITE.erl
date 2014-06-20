@@ -68,7 +68,8 @@ check_invalid(_Config) ->
     %% Arbitrary lists are deemed to be orddicts.
     Bad_Dicts = [27, {some, random, tuple}, [{a,b,c}], <<>>],
     Expected = lists:duplicate(length(Bad_Dicts), not_a_dict),
-    Expected = [not_a_dict = ?TM:size(Item) || Item <- Bad_Dicts],
+    Expected = [not_a_dict = ?TM:size(Item)    || Item <- Bad_Dicts],
+    Expected = [not_a_dict = ?TM:to_list(Item) || Item <- Bad_Dicts],
     ct:comment("Tested: ~p", [Bad_Dicts]),
     ok.
 
@@ -150,15 +151,15 @@ any_from_list(PD_Key, Num_Tests) ->
 make_orddict(Attrs) ->    
     lists:foldl(fun({Key, Val}, Acc_Dict) ->
                         case orddict:is_key(Key, Acc_Dict) of
-                            true  -> orddict:store(Key, Val, Acc_Dict);
-                            false -> Acc_Dict
+                            false -> orddict:store(Key, Val, Acc_Dict);
+                            true  -> Acc_Dict
                         end
                 end, orddict:new(), Attrs).
-    
-%% valid_starting_dict(not_a_dict, Dict, PD_Key, Orig_Props) ->
+
 valid_starting_dict(Dict_Type,  Dict, PD_Key, Orig_Props) ->
     Unshadowed_Props = make_orddict(Orig_Props),
     Exp_Size = orddict:size(Unshadowed_Props),
+    log_from_list_case(length(Orig_Props), Exp_Size, orddict:to_list(Unshadowed_Props)),
     true     = ?TM:is_dict(Dict),
     Exp_Size = ?TM:size(Dict),
     Unshadowed_Props = lists:sort(?TM:to_list(Dict)),
@@ -166,3 +167,21 @@ valid_starting_dict(Dict_Type,  Dict, PD_Key, Orig_Props) ->
     %% Report the number of tests run for each Dict_Type.
     put(PD_Key, orddict:update_counter(Dict_Type, 1, get(PD_Key))),
     true.
+
+log_from_list_case(0, 0, []) ->
+    ct:log("Num_Attrs: 0  Key_Size_Range: {0, 0}  Val_Size_Range {0, 0}~n", []);
+log_from_list_case(Num_Props, Num_Unique_Props, Unique_Props) ->
+    %% ct:log("Unshadowed: ~p (~p,~p)~n", [Unique_Props, Num_Props, Num_Unique_Props]),
+    {Key_Sizes, Val_Sizes}
+        = lists:foldl(fun({Key, Val}, {KSizes, VSizes}) ->
+                              {[elem_size(Key) | KSizes], [elem_size(Val) | VSizes]}
+                      end, {[], []}, Unique_Props),
+    {Min_Key, Max_Key} = {lists:min(Key_Sizes), lists:max(Key_Sizes)},
+    {Min_Val, Max_Val} = {lists:min(Val_Sizes), lists:max(Val_Sizes)},
+    ct:log("Num_Attrs: ~p  Key_Size_Range: ~p  Val_Size_Range ~p~n",
+           [{Num_Props, Num_Unique_Props}, {Min_Key, Max_Key}, {Min_Val, Max_Val}]).
+
+elem_size( Item) when is_list(Item)   -> length(Item);
+elem_size( Item) when is_binary(Item) -> byte_size(Item);
+elem_size( Item) when is_atom(Item)   -> length(atom_to_list(Item));
+elem_size(_Item)                      -> -1.
