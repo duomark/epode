@@ -49,19 +49,20 @@
 
 -spec is_dict   (any()) -> boolean().
 
+-define(IS_VALID_KEYVAL(__Type), __Type =:= pure_binary; __Type =:= atom_attrs; __Type =:= any).
 
 %% vbisect is the only dictionary that is restricted with key value types.
-new(dict,    Keyval_Type) -> {dict,    Keyval_Type, dict   :new()};
-new(orddict, Keyval_Type) -> {orddict, Keyval_Type, orddict:new()};
-new(vbisect, pure_binary) -> {vbisect, pure_binary, vbisect:from_orddict([])}.
+new(dict,    Keyval_Type) when ?IS_VALID_KEYVAL(Keyval_Type) -> {dict,    Keyval_Type, dict   :new()};
+new(orddict, Keyval_Type) when ?IS_VALID_KEYVAL(Keyval_Type) -> {orddict, Keyval_Type, orddict:new()};
+new(vbisect, pure_binary)                                    -> {vbisect, pure_binary, vbisect:from_orddict([])}.
 
 %% Construct a dictionary from a list of Attribute / Value pairs.
 %% The source list is treated as a proplist so that the caller can push
 %% contexts onto the front of the attribute list to efficiently provide
 %% overrides for already specified attributes.
-from_list(dict,    Keyval_Type, Attrs) -> {dict,    Keyval_Type, make_dict    (Attrs)};
-from_list(orddict, Keyval_Type, Attrs) -> {orddict, Keyval_Type, make_orddict (Attrs)};
-from_list(vbisect, pure_binary, Attrs) -> {vbisect, pure_binary, vbisect:from_orddict (make_orddict(Attrs))}.
+from_list(dict,    Keyval_Type, Attrs) when ?IS_VALID_KEYVAL(Keyval_Type) -> {dict,    Keyval_Type, make_dict    (Attrs)};
+from_list(orddict, Keyval_Type, Attrs) when ?IS_VALID_KEYVAL(Keyval_Type) -> {orddict, Keyval_Type, make_orddict (Attrs)};
+from_list(vbisect, pure_binary, Attrs)                                    -> {vbisect, pure_binary, vbisect:from_orddict (make_orddict(Attrs))}.
 
 to_list(Dict) -> 
     case dict_type(Dict) of
@@ -98,10 +99,10 @@ is_dict(Dict) ->
 
 
 %% Internally determine what type a dictionary is because of differing APIs.
-dict_type({dict,    _Any_Keyval_Type, Bare_Dict}) -> valid_dict(dict,    Bare_Dict);
-dict_type({orddict, _Any_Keyval_Type, Bare_Dict}) -> valid_dict(orddict, Bare_Dict);
-dict_type({vbisect, pure_binary,      Bare_Dict}) -> valid_dict(vbisect, Bare_Dict);
-dict_type(_Incorrect_Format)                      -> not_a_dict.
+dict_type({dict,    Keyval_Type, Bare_Dict}) when ?IS_VALID_KEYVAL(Keyval_Type) -> valid_dict(dict,    Bare_Dict);
+dict_type({orddict, Keyval_Type, Bare_Dict}) when ?IS_VALID_KEYVAL(Keyval_Type) -> valid_dict(orddict, Bare_Dict);
+dict_type({vbisect, pure_binary, Bare_Dict})                                    -> valid_dict(vbisect, Bare_Dict);
+dict_type(_Incorrect_Format)                                                    -> not_a_dict.
 
 valid_dict(Dict_Type, Bare_Dict) ->
     case is_dict(Dict_Type, Bare_Dict) of
@@ -133,8 +134,11 @@ is_dict(vbisect,            Bare_Dict) -> vbisect:is_vbisect(Bare_Dict).
 
 -spec size(any()) -> non_neg_integer() | not_a_dict.
 
-size({_Dict_Type, _Keyval_Type, Bare_Dict} = Dict) -> size(dict_type(Dict), Bare_Dict);
-size(                                           _) -> not_a_dict.
+size({_Dict_Type, Keyval_Type, Bare_Dict} = Dict)
+  when ?IS_VALID_KEYVAL(Keyval_Type) ->
+    size(dict_type(Dict), Bare_Dict);
+size(_) ->
+    not_a_dict.
 
 
 size(dict,        Bare_Dict) -> dict   :size(Bare_Dict);
@@ -155,17 +159,16 @@ size(not_a_dict,  _Bad_Dict) -> not_a_dict.
 -type xlate_fn() :: fun((Key1::epode_attr(), Value1::epode_value())
                         -> {Key2::epode_attr(), Value2::epode_value()} | undefined).
 
--spec map       (map_fn(),   epode_dict(), epode_all_dict_type()) -> epode_dict().
--spec xlate     (xlate_fn(), epode_dict(), epode_all_dict_type()) -> epode_dict().
+-spec map       (map_fn(),   epode_dict(), epode_all_dict_type()) -> epode_dict() | not_a_dict.
+-spec xlate     (xlate_fn(), epode_dict(), epode_all_dict_type()) -> epode_dict() | not_a_dict.
 
-%% Convert just the values (keeping the old attributes) to generate a new dictionary.
-map(Fun, Dict, New_Keyval_Type) ->
-    case dict_type(Dict) of
-        dict    -> {dict,    New_Keyval_Type, dict   :map(Fun, bare_dict(Dict))};
-        orddict -> {orddict, New_Keyval_Type, orddict:map(Fun, bare_dict(Dict))};
-        vbisect -> case New_Keyval_Type of
-                       pure_binary -> {vbisect, pure_binary, vbisect:map(Fun, bare_dict(Dict))}
-                   end
+%% Convert just the values (keeping the old attributes) to generate a new dictionary of the same style.
+map(Fun, Dict, New_Keyval_Type) when ?IS_VALID_KEYVAL(New_Keyval_Type) ->
+    case {dict_type(Dict), New_Keyval_Type} of
+        {dict,              _} -> {dict,    New_Keyval_Type, dict   :map(Fun, bare_dict(Dict))};
+        {orddict,           _} -> {orddict, New_Keyval_Type, orddict:map(Fun, bare_dict(Dict))};
+        {vbisect, pure_binary} -> {vbisect, New_Keyval_Type, vbisect:map(Fun, bare_dict(Dict))};
+        {not_a_dict,        _} -> not_a_dict
     end.
 
 
@@ -175,8 +178,13 @@ map(Fun, Dict, New_Keyval_Type) ->
         {__Module, __New_Keyval_Type,
          __Module:from_list( xlate_attrs(__Fun, __New_Keyval_Type, __Module:to_list(__Bare_Dict)) )}).
 
-xlate(Fun, Dict, New_Keyval_Type) ->
-    ?MAP_XLATE(dict_type(Dict), New_Keyval_Type, Fun, bare_dict(Dict)).
+xlate(Fun, Dict, New_Keyval_Type) when ?IS_VALID_KEYVAL(New_Keyval_Type) ->
+    case {dict_type(Dict), New_Keyval_Type} of
+        {dict,              _} -> ?MAP_XLATE(dict,    New_Keyval_Type, Fun, bare_dict(Dict));
+        {orddict,           _} -> ?MAP_XLATE(orddict, New_Keyval_Type, Fun, bare_dict(Dict));
+        {vbisect, pure_binary} -> ?MAP_XLATE(vbisect, New_Keyval_Type, Fun, bare_dict(Dict));
+        {not_a_dict,        _} -> not_a_dict
+    end.
 
 xlate_attrs(Fun, New_Keyval_Type, Keyval_Pairs) ->
     lists:foldl(fun({Attr, Value}, New_Pair_List) ->
