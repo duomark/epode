@@ -161,14 +161,25 @@ size(not_a_dict,  _Bad_Dict) -> not_a_dict.
 
 -spec map       (map_fn(),   epode_dict(), epode_all_dict_type()) -> epode_dict() | not_a_dict.
 -spec xlate     (xlate_fn(), epode_dict(), epode_all_dict_type()) -> epode_dict() | not_a_dict.
-
+             
 %% Convert just the values (keeping the old attributes) to generate a new dictionary of the same style.
-map(Fun, Dict, New_Keyval_Type) when ?IS_VALID_KEYVAL(New_Keyval_Type) ->
+map(User_Map_Fn, Dict, New_Keyval_Type) when ?IS_VALID_KEYVAL(New_Keyval_Type) ->
+    Map_Fn = possibly_wrap_map_fn(User_Map_Fn, New_Keyval_Type),
     case {dict_type(Dict), New_Keyval_Type} of
-        {dict,              _} -> {dict,    New_Keyval_Type, dict   :map(Fun, bare_dict(Dict))};
-        {orddict,           _} -> {orddict, New_Keyval_Type, orddict:map(Fun, bare_dict(Dict))};
-        {vbisect, pure_binary} -> {vbisect, New_Keyval_Type, vbisect:map(Fun, bare_dict(Dict))};
+        {dict,              _} -> {dict,    New_Keyval_Type, dict   :map(Map_Fn, bare_dict(Dict))};
+        {orddict,           _} -> {orddict, New_Keyval_Type, orddict:map(Map_Fn, bare_dict(Dict))};
+        {vbisect, pure_binary} -> {vbisect, New_Keyval_Type, vbisect:map(Map_Fn, bare_dict(Dict))};
         {not_a_dict,        _} -> not_a_dict
+    end.
+
+possibly_wrap_map_fn(Map_Fn, pure_binary) -> map_to_pure_binary_fn(Map_Fn);
+possibly_wrap_map_fn(Map_Fn, _Not_Binary) -> Map_Fn.
+
+map_to_pure_binary_fn(User_Fn) ->
+    fun(Key, Val) ->
+            case User_Fn(Key, Val) of
+                New_Value when is_binary(New_Value) -> New_Value
+            end
     end.
 
 
@@ -178,17 +189,18 @@ map(Fun, Dict, New_Keyval_Type) when ?IS_VALID_KEYVAL(New_Keyval_Type) ->
         {__Module, __New_Keyval_Type,
          __Module:from_list( xlate_attrs(__Fun, __New_Keyval_Type, __Module:to_list(__Bare_Dict)) )}).
 
-xlate(Fun, Dict, New_Keyval_Type) when ?IS_VALID_KEYVAL(New_Keyval_Type) ->
+xlate(User_Xlate_Fn, Dict, New_Keyval_Type) when ?IS_VALID_KEYVAL(New_Keyval_Type) ->
     case {dict_type(Dict), New_Keyval_Type} of
-        {dict,              _} -> ?MAP_XLATE(dict,    New_Keyval_Type, Fun, bare_dict(Dict));
-        {orddict,           _} -> ?MAP_XLATE(orddict, New_Keyval_Type, Fun, bare_dict(Dict));
-        {vbisect, pure_binary} -> ?MAP_XLATE(vbisect, New_Keyval_Type, Fun, bare_dict(Dict));
+        {dict,              _} -> ?MAP_XLATE(dict,    New_Keyval_Type, User_Xlate_Fn, bare_dict(Dict));
+        {orddict,           _} -> ?MAP_XLATE(orddict, New_Keyval_Type, User_Xlate_Fn, bare_dict(Dict));
+        {vbisect, pure_binary} -> ?MAP_XLATE(vbisect, New_Keyval_Type, User_Xlate_Fn, bare_dict(Dict));
         {not_a_dict,        _} -> not_a_dict
     end.
 
-xlate_attrs(Fun, New_Keyval_Type, Keyval_Pairs) ->
+%% TODO: This function needs to systematically handle generating duplicate attributes.
+xlate_attrs(Xlate_Fn, New_Keyval_Type, Keyval_Pairs) ->
     lists:foldl(fun({Attr, Value}, New_Pair_List) ->
-                        case {New_Keyval_Type, Fun(Attr, Value)} of
+                        case {New_Keyval_Type, Xlate_Fn(Attr, Value)} of
 
                             %% Both Attribute and Value must be binary...
                             {pure_binary, {_New_Attr, _New_Value} = New_Pair}

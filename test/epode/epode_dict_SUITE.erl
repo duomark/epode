@@ -131,8 +131,8 @@ check_invalid_keyval(_Config) ->
     crash = ?CASE_CLAUSE_CRASH ( ?TM:xlate (fun xlate_fn/2, ?VBISECT_DICT, atom_attrs) ),
 
     ct:log("Crash epode_dict:map/2 and xlate/3 function calls with invalid dict internal types"),
-    %% crash = ?CASE_CLAUSE_CRASH   ( ?TM:map   (fun map_fn/2,   ?DICT_BAD_DICT,    pure_binary) ),
-    %% crash = ?CASE_CLAUSE_CRASH   ( ?TM:map   (fun map_fn/2,   ?ORDDICT_BAD_DICT, pure_binary) ),
+    crash = ?CASE_CLAUSE_CRASH   ( ?TM:map   (fun map_fn/2,   ?DICT_BAD_DICT,    pure_binary) ),
+    crash = ?CASE_CLAUSE_CRASH   ( ?TM:map   (fun map_fn/2,   ?ORDDICT_BAD_DICT, pure_binary) ),
     crash = ?CASE_CLAUSE_CRASH   ( ?TM:xlate (fun xlate_fn/2, ?DICT_BAD_DICT,    pure_binary) ),
     crash = ?CASE_CLAUSE_CRASH   ( ?TM:xlate (fun xlate_fn/2, ?ORDDICT_BAD_DICT, pure_binary) ),
 
