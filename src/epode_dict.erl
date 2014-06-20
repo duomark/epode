@@ -16,6 +16,7 @@
 -export([
          new/2,             % Construct a new empty epode_dict
          from_list/3,       % Construct a new epode_dict from an attribute list
+         to_list/1,         % Create a list of {Key, Val} from the dictionary
          is_dict/1,         % Check if data is an epode_dict
          size/1,            % Return the size of an epode_dict
          map/3,             % Convert attribute values only
@@ -42,6 +43,10 @@
                 (epode_atom_dict_type(), epode_keyval_atom_type(),   atom_dict_list()   ) -> epode_atom_dict();
                 (epode_any_dict_type(),  epode_keyval_any_type(),    any_dict_list()    ) -> epode_any_dict().
 
+-spec to_list   (epode_bin_dict())  -> binary_dict_list();
+                %% If overloaded types allowed: (epode_atom_dict()) -> atom_dict_list();
+                (epode_any_dict())  -> any_dict_list().
+
 -spec is_dict   (any()) -> boolean().
 
 
@@ -51,10 +56,38 @@ new(orddict, Keyval_Type) -> {orddict, Keyval_Type, orddict:new()};
 new(vbisect, pure_binary) -> {vbisect, pure_binary, vbisect:from_orddict([])}.
 
 %% Construct a dictionary from a list of Attribute / Value pairs.
-from_list(dict,    Keyval_Type, Attrs) -> {dict,    Keyval_Type, dict   :from_list(Attrs)};
-from_list(orddict, Keyval_Type, Attrs) -> {orddict, Keyval_Type, orddict:from_list(Attrs)};
-from_list(vbisect, pure_binary, Attrs) -> {vbisect, pure_binary, vbisect:from_list(Attrs)}.
+%% The source list is treated as a proplist so that the caller can push
+%% contexts onto the front of the attribute list to efficiently provide
+%% overrides for already specified attributes.
+from_list(dict,    Keyval_Type, Attrs) -> {dict,    Keyval_Type, make_dict    (Attrs)};
+from_list(orddict, Keyval_Type, Attrs) -> {orddict, Keyval_Type, make_orddict (Attrs)};
+from_list(vbisect, pure_binary, Attrs) -> {vbisect, pure_binary, vbisect:from_orddict (make_orddict(Attrs))}.
 
+to_list(Dict) -> 
+    case dict_type(Dict) of
+        dict       -> dict:to_list    (bare_dict(Dict));
+        orddict    -> orddict:to_list (bare_dict(Dict));
+        vbisect    -> vbisect:to_list (bare_dict(Dict));
+        not_a_dict -> not_a_dict
+    end.
+
+%% These functions enforce proplist style shadowing of values rather
+%% than using the built-in from_list where last clobbers earlier values.
+make_dict(Attrs) ->
+    lists:foldl(fun({Key, Val}, Acc_Dict) ->
+                        case dict:is_key(Key, Acc_Dict) of
+                            true  -> dict:store(Key, Val, Acc_Dict);
+                            false -> Acc_Dict
+                        end
+                end, dict:new(), Attrs).
+
+make_orddict(Attrs) ->    
+    lists:foldl(fun({Key, Val}, Acc_Dict) ->
+                        case orddict:is_key(Key, Acc_Dict) of
+                            true  -> orddict:store(Key, Val, Acc_Dict);
+                            false -> Acc_Dict
+                        end
+                end, orddict:new(), Attrs).
 
 %% Test if a dict is properly constructed.
 is_dict(Dict) ->
@@ -75,6 +108,8 @@ valid_dict(Dict_Type, Bare_Dict) ->
         true  -> Dict_Type;
         false -> not_a_dict
     end.
+
+bare_dict({_Dict_Type, _Keyval_Type, Bare_Dict}) -> Bare_Dict.
 
 
 %% OTP doesn't provide is_dict types, so this is a low-level hack for convenience.
@@ -124,12 +159,12 @@ size(not_a_dict,  _Bad_Dict) -> not_a_dict.
 -spec xlate     (xlate_fn(), epode_dict(), epode_all_dict_type()) -> epode_dict().
 
 %% Convert just the values (keeping the old attributes) to generate a new dictionary.
-map(Fun, {_Dict_Type, _Keyval_Type, Bare_Dict} = _Dict, New_Keyval_Type) ->
-    case dict_type(Bare_Dict) of
-        dict    -> {dict,    New_Keyval_Type, dict   :map(Fun, Bare_Dict)};
-        orddict -> {orddict, New_Keyval_Type, orddict:map(Fun, Bare_Dict)};
+map(Fun, Dict, New_Keyval_Type) ->
+    case dict_type(Dict) of
+        dict    -> {dict,    New_Keyval_Type, dict   :map(Fun, bare_dict(Dict))};
+        orddict -> {orddict, New_Keyval_Type, orddict:map(Fun, bare_dict(Dict))};
         vbisect -> case New_Keyval_Type of
-                       pure_binary -> {vbisect, pure_binary, vbisect:map(Fun, Bare_Dict)}
+                       pure_binary -> {vbisect, pure_binary, vbisect:map(Fun, bare_dict(Dict))}
                    end
     end.
 
@@ -140,8 +175,8 @@ map(Fun, {_Dict_Type, _Keyval_Type, Bare_Dict} = _Dict, New_Keyval_Type) ->
         {__Module, __New_Keyval_Type,
          __Module:from_list( xlate_attrs(__Fun, __New_Keyval_Type, __Module:to_list(__Bare_Dict)) )}).
 
-xlate(Fun, {_Dict_Type, _Keyval_Type, Bare_Dict} = Dict, New_Keyval_Type) ->
-    ?MAP_XLATE(dict_type(Dict), New_Keyval_Type, Fun, Bare_Dict).
+xlate(Fun, Dict, New_Keyval_Type) ->
+    ?MAP_XLATE(dict_type(Dict), New_Keyval_Type, Fun, bare_dict(Dict)).
 
 xlate_attrs(Fun, New_Keyval_Type, Keyval_Pairs) ->
     lists:foldl(fun({Attr, Value}, New_Pair_List) ->

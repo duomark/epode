@@ -120,15 +120,15 @@ valid_empty_dict(Dict_Type, Dict, PD_Key) ->
 %% Construction and verification of empty dictionaries.
 check_pure_binary_from_list(_Config) ->
     Log_Stmt = "Test dictionary constructed from_list for all pure_binary keyval dictionary types (~p tests)",
-    true = epode_common_test:test_count_wrapper(Log_Stmt, ct_check_new, fun pure_binary_from_list/2, 100).
+    true = epode_common_test:test_count_wrapper(Log_Stmt, ct_check_from_list, fun pure_binary_from_list/2, 100).
 
 check_atom_from_list(_Config) ->
     Log_Stmt = "Test dictionary constructed from_list for all atom_attrs keyval dictionary types (~p tests)",
-    true = epode_common_test:test_count_wrapper(Log_Stmt, ct_check_new, fun atom_attrs_from_list/2, 100).
+    true = epode_common_test:test_count_wrapper(Log_Stmt, ct_check_from_list, fun atom_attrs_from_list/2, 100).
 
 check_any_from_list(_Config) ->
     Log_Stmt = "Test dictionary constructed from_list for all any keyval dictionary types (~p tests)",
-    true = epode_common_test:test_count_wrapper(Log_Stmt, ct_check_new, fun any_from_list/2, 100).
+    true = epode_common_test:test_count_wrapper(Log_Stmt, ct_check_from_list, fun any_from_list/2, 100).
 
 %% Support functions for from_list constructor quickcheck testing.
 pure_binary_from_list(PD_Key, Num_Tests) ->
@@ -147,9 +147,22 @@ any_from_list(PD_Key, Num_Tests) ->
                    valid_starting_dict(Dict_Type, ?TM:from_list(Dict_Type, pure_binary, Attr_List), PD_Key, Attr_List)),
     proper:quickcheck(Test, ?PQ_NUM(Num_Tests)).
 
-valid_starting_dict(Dict_Type, Dict, PD_Key, Orig_Props) ->
-    Size = orddict:size(orddict:from_list(Orig_Props)),
-    true = ?TM:is_dict(Dict),
-    Size = ?TM:size(Dict),
+make_orddict(Attrs) ->    
+    lists:foldl(fun({Key, Val}, Acc_Dict) ->
+                        case orddict:is_key(Key, Acc_Dict) of
+                            true  -> orddict:store(Key, Val, Acc_Dict);
+                            false -> Acc_Dict
+                        end
+                end, orddict:new(), Attrs).
+    
+%% valid_starting_dict(not_a_dict, Dict, PD_Key, Orig_Props) ->
+valid_starting_dict(Dict_Type,  Dict, PD_Key, Orig_Props) ->
+    Unshadowed_Props = make_orddict(Orig_Props),
+    Exp_Size = orddict:size(Unshadowed_Props),
+    true     = ?TM:is_dict(Dict),
+    Exp_Size = ?TM:size(Dict),
+    Unshadowed_Props = lists:sort(?TM:to_list(Dict)),
+    
+    %% Report the number of tests run for each Dict_Type.
     put(PD_Key, orddict:update_counter(Dict_Type, 1, get(PD_Key))),
     true.
