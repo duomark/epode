@@ -22,14 +22,15 @@
 -export([
          check_invalid_dict/1,          check_invalid_keyval/1,
          check_pure_binary_new/1,       check_atom_new/1,       check_any_new/1,
-         check_pure_binary_from_list/1, check_atom_from_list/1, check_any_from_list/1
+         check_pure_binary_from_list/1, check_atom_from_list/1, check_any_from_list/1,
+         check_map_fn/1,                check_xlate_fn/1
         ]).
 
 -include("../epode_common_test.hrl").
 
 -include("epode.hrl").
 
-all() -> [{group, construction}].
+all() -> [{group, construction}, {group, translation}].
 
 groups() -> [
              %% Main test groups...
@@ -37,10 +38,15 @@ groups() -> [
                                          {group, make_dict}, {group, from_list},
                                          check_invalid_dict, check_invalid_keyval
                                         ]},
+             {translation,  [sequence], [
+                                         {group, map_fn},    {group, xlate_fn}
+                                        ]},
 
              %% Supporting groups...
              {make_dict,    [sequence], [check_pure_binary_new,       check_atom_new,       check_any_new]},
-             {from_list,    [sequence], [check_pure_binary_from_list, check_atom_from_list, check_any_from_list]}
+             {from_list,    [sequence], [check_pure_binary_from_list, check_atom_from_list, check_any_from_list]},
+             {map_fn,       [sequence], [check_map_fn]},
+             {xlate_fn,     [sequence], [check_xlate_fn]}
             ].
 
 init_per_suite(Config) -> Config.
@@ -231,7 +237,7 @@ make_orddict(Attrs) ->
                         end
                 end, orddict:new(), Attrs).
 
-valid_starting_dict(Dict_Type,  Dict, PD_Key, Orig_Props) ->
+valid_starting_dict(Dict_Type, Dict, PD_Key, Orig_Props) ->
     Unshadowed_Props = make_orddict(Orig_Props),
     Exp_Size = orddict:size(Unshadowed_Props),
     log_from_list_case(length(Orig_Props), Exp_Size, orddict:to_list(Unshadowed_Props)),
@@ -260,3 +266,50 @@ elem_size( Item) when is_list(Item)   -> length(Item);
 elem_size( Item) when is_binary(Item) -> byte_size(Item);
 elem_size( Item) when is_atom(Item)   -> length(atom_to_list(Item));
 elem_size(_Item)                      -> -1.
+
+
+%%%------------------------------------------------------------------------------
+%% Property:   New Dictionary from list of data
+%% Validation: Type matches request, and elements exist in new dictionary.
+%%%------------------------------------------------------------------------------
+
+-spec check_map_fn   (config()) -> ok.
+-spec check_xlate_fn (config()) -> ok.
+
+check_map_fn(_Config) ->
+    Log_Stmt = "Test mapping values to a new dictionary (~p tests)",
+    true = epode_common_test:test_count_wrapper(Log_Stmt, ct_check_map, fun map_binary_size/2, 100),
+    ok.
+
+map_binary_size(PD_Key, Num_Tests) ->
+    Test = ?FORALL({Dict_Type, Attr_List}, {epode_bdict_type(), list({non_empty(binary()), non_empty(binary())})},
+                   map_dict(Dict_Type, ?TM:from_list(Dict_Type, pure_binary, Attr_List), PD_Key)),
+    proper:quickcheck(Test, ?PQ_NUM(Num_Tests)).
+
+trunc_binary(_Key, <<Val:3/binary, _Rest/binary>>) -> Val;
+trunc_binary(_Key, <<Val/binary>>)                 -> Val.
+
+map_dict(Dict_Type, Dict, PD_Key) ->
+    Exp_Size   = ?TM:size(Dict),
+    Orig_Props = lists:sort(?TM:to_list(Dict)),
+    Exp_Props  = [{Key, case byte_size(Val) of 
+                            Big when Big > 3 -> binary:part(Val, {0, 3});
+                            Small -> Val
+                        end} || {Key, Val} <- Orig_Props],
+    New_Dict   = ?TM:map(fun trunc_binary/2, Dict, pure_binary),
+    New_Props  = lists:sort(?TM:to_list(New_Dict)),
+    log_from_list_case(?TM:size(Dict), ?TM:size(New_Dict), Orig_Props),
+    log_from_list_case(?TM:size(Dict), ?TM:size(New_Dict), New_Props),
+    true       = ?TM:is_dict(New_Dict),
+    Exp_Size   = ?TM:size(New_Dict),
+    Exp_Props  = New_Props,
+
+    
+    %% Report the number of tests run for each Dict_Type.
+    put(PD_Key, orddict:update_counter(Dict_Type, 1, get(PD_Key))),
+    true.
+    
+
+check_xlate_fn(_Config) ->
+    Log_Stmt = "Test translating keys and values to a new dictionary",
+    ok.
