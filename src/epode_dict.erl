@@ -20,7 +20,7 @@
          is_dict/1,         % Check if data is an epode_dict
          size/1,            % Return the size of an epode_dict
          map/3,             % Convert attribute values only
-         xlate/3            % Convert attributes and values
+         xlate/4            % Convert attributes and values
         ]).
 
 -include("epode.hrl").
@@ -74,21 +74,16 @@ to_list(Dict) ->
 
 %% These functions enforce proplist style shadowing of values rather
 %% than using the built-in from_list where last clobbers earlier values.
-make_dict(Attrs) ->
+-define(MAKE_FOLD(__Otp_Dict_Type, __Attrs),
     lists:foldl(fun({Key, Val}, Acc_Dict) ->
-                        case dict:is_key(Key, Acc_Dict) of
-                            false -> dict:store(Key, Val, Acc_Dict);
+                        case __Otp_Dict_Type:is_key(Key, Acc_Dict) of
+                            false -> __Otp_Dict_Type:store(Key, Val, Acc_Dict);
                             true  -> Acc_Dict
                         end
-                end, dict:new(), Attrs).
+                end, __Otp_Dict_Type:new(), __Attrs)).
 
-make_orddict(Attrs) ->    
-    lists:foldl(fun({Key, Val}, Acc_Dict) ->
-                        case orddict:is_key(Key, Acc_Dict) of
-                            false -> orddict:store(Key, Val, Acc_Dict);
-                            true  -> Acc_Dict
-                        end
-                end, orddict:new(), Attrs).
+make_dict    (Attrs) -> ?MAKE_FOLD(dict,    Attrs).
+make_orddict (Attrs) -> ?MAKE_FOLD(orddict, Attrs).
 
 %% Test if a dict is properly constructed.
 is_dict(Dict) ->
@@ -159,8 +154,8 @@ size(not_a_dict,  _Bad_Dict) -> not_a_dict.
 -type xlate_fn() :: fun((Key1::epode_attr(), Value1::epode_value())
                         -> {Key2::epode_attr(), Value2::epode_value()} | undefined).
 
--spec map       (map_fn(),   epode_dict(), epode_all_dict_type()) -> epode_dict() | not_a_dict.
--spec xlate     (xlate_fn(), epode_dict(), epode_all_dict_type()) -> epode_dict() | not_a_dict.
+-spec map       (map_fn(),   epode_dict(), epode_all_dict_type())                        -> epode_dict() | not_a_dict.
+-spec xlate     (xlate_fn(), epode_dict(), epode_all_dict_type(), epode_all_dict_type()) -> epode_dict() | not_a_dict.
              
 %% Convert just the values (keeping the old attributes) to generate a new dictionary of the same style.
 map(User_Map_Fn, Dict, New_Keyval_Type) when ?IS_VALID_KEYVAL(New_Keyval_Type) ->
@@ -184,18 +179,23 @@ map_to_pure_binary_fn(User_Fn) ->
 
 
 %% Convert both attributes and values to generate a new dictionary.
--define(MAP_XLATE(__Dict_Type, __New_Keyval_Type, __Fun, __Bare_Dict),
-        __Module = __Dict_Type,
-        {__Module, __New_Keyval_Type,
-         __Module:from_list( xlate_attrs(__Fun, __New_Keyval_Type, __Module:to_list(__Bare_Dict)) )}).
+-define(MAP_XLATE(__Old_Dict_Type, __New_Dict_Type, __New_Keyval_Type, __Fun, __Bare_Dict),
+        {__New_Dict_Type, __New_Keyval_Type,
+         __New_Dict_Type:from_list( xlate_attrs(__Fun, __New_Keyval_Type,
+                                                __Old_Dict_Type:to_list(__Bare_Dict)) )}).
 
-xlate(User_Xlate_Fn, Dict, New_Keyval_Type) when ?IS_VALID_KEYVAL(New_Keyval_Type) ->
-    case {dict_type(Dict), New_Keyval_Type} of
-        {dict,              _} -> ?MAP_XLATE(dict,    New_Keyval_Type, User_Xlate_Fn, bare_dict(Dict));
-        {orddict,           _} -> ?MAP_XLATE(orddict, New_Keyval_Type, User_Xlate_Fn, bare_dict(Dict));
-        {vbisect, pure_binary} -> ?MAP_XLATE(vbisect, New_Keyval_Type, User_Xlate_Fn, bare_dict(Dict));
-        {not_a_dict,        _} -> not_a_dict
+xlate(User_Xlate_Fn, Dict, New_Dict_Type, New_Keyval_Type) when ?IS_VALID_KEYVAL(New_Keyval_Type) ->
+    case dict_type(Dict) of
+        not_a_dict    -> not_a_dict;
+        Old_Dict_Type -> xlate_valid(Old_Dict_Type, New_Dict_Type, New_Keyval_Type, User_Xlate_Fn, bare_dict(Dict))
     end.
+
+xlate_valid(Old_Dict_Type, vbisect, pure_binary, User_Xlate_Fn, Bare_Dict) ->
+    ?MAP_XLATE(Old_Dict_Type, vbisect, pure_binary, User_Xlate_Fn, Bare_Dict);
+xlate_valid(Old_Dict_Type, New_Dict_Type, New_Keyval_Type, User_Xlate_Fn, Bare_Dict)
+  when New_Dict_Type =/= vbisect ->
+    ?MAP_XLATE(Old_Dict_Type, New_Dict_Type, New_Keyval_Type, User_Xlate_Fn, Bare_Dict).
+
 
 %% TODO: This function needs to systematically handle generating duplicate attributes.
 xlate_attrs(Xlate_Fn, New_Keyval_Type, Keyval_Pairs) ->
