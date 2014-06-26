@@ -23,7 +23,8 @@
          check_invalid_dict/1,          check_invalid_keyval/1,
          check_pure_binary_new/1,       check_atom_new/1,       check_any_new/1,
          check_pure_binary_from_list/1, check_atom_from_list/1, check_any_from_list/1,
-         check_map_fn/1,                check_xlate_fn/1
+         check_pure_binary_map_fn/1,    check_atom_map_fn/1,    check_any_map_fn/1,
+         check_xlate_fn/1
         ]).
 
 -include("../epode_common_test.hrl").
@@ -45,7 +46,7 @@ groups() -> [
              %% Supporting groups...
              {make_dict,    [sequence], [check_pure_binary_new,       check_atom_new,       check_any_new]},
              {from_list,    [sequence], [check_pure_binary_from_list, check_atom_from_list, check_any_from_list]},
-             {map_fn,       [sequence], [check_map_fn]},
+             {map_fn,       [sequence], [check_pure_binary_map_fn,    check_atom_map_fn,    check_any_map_fn]},
              {xlate_fn,     [sequence], [check_xlate_fn]}
             ].
 
@@ -287,21 +288,48 @@ elem_size(_Item)                      -> -1.
 %% Validation: Type matches request, and elements exist in new dictionary.
 %%%------------------------------------------------------------------------------
 
--spec check_map_fn   (config()) -> ok.
--spec check_xlate_fn (config()) -> ok.
+-spec check_pure_binary_map_fn (config()) -> ok.
+-spec check_atom_map_fn        (config()) -> ok.
+-spec check_any_map_fn         (config()) -> ok.
 
-check_map_fn(_Config) ->
+-spec check_xlate_fn           (config()) -> ok.
+
+check_pure_binary_map_fn(_Config) ->
     Log_Stmt = "Test mapping values to a new dictionary (~p tests)",
     true = epode_common_test:test_count_wrapper(Log_Stmt, ct_check_map, fun map_binary_size/2, 100),
     ok.
 
+check_atom_map_fn(_Config) ->
+    Log_Stmt = "Test mapping values to a new dictionary (~p tests)",
+    true = epode_common_test:test_count_wrapper(Log_Stmt, ct_check_map, fun map_atom_attrs/2, 100),
+    ok.
+
+check_any_map_fn(_Config) ->
+    Log_Stmt = "Test mapping values to a new dictionary (~p tests)",
+    true = epode_common_test:test_count_wrapper(Log_Stmt, ct_check_map, fun map_any/2, 100),
+    ok.
+
 map_binary_size(PD_Key, Num_Tests) ->
-    Test = ?FORALL({Dict_Type, Attr_List}, {epode_bdict_type(), list({non_empty(binary()), non_empty(binary())})},
+    Test = ?FORALL({Dict_Type, Attr_List}, {epode_bdict_type(), list({non_empty(binary()), binary()})},
                    map_dict(Dict_Type, ?TM:from_list(Dict_Type, pure_binary, Attr_List), PD_Key)),
     proper:quickcheck(Test, ?PQ_NUM(Num_Tests)).
 
+map_atom_attrs(PD_Key, Num_Tests) ->
+    Test = ?FORALL({Dict_Type, Attr_List}, {epode_atom_dict_type(), list({atom(), any()})},
+                   map_dup(Dict_Type, ?TM:from_list(Dict_Type, atom_attrs, Attr_List), PD_Key, atom_attrs)),
+    proper:quickcheck(Test, ?PQ_NUM(Num_Tests)).
+
+map_any(PD_Key, Num_Tests) ->
+    Test = ?FORALL({Dict_Type, Attr_List}, {epode_atom_dict_type(), list({any(), any()})},
+                   map_dup(Dict_Type, ?TM:from_list(Dict_Type, any, Attr_List), PD_Key, any)),
+    proper:quickcheck(Test, ?PQ_NUM(Num_Tests)).
+
 trunc_binary(_Key, <<Val:3/binary, _Rest/binary>>) -> Val;
-trunc_binary(_Key, <<Val/binary>>)                 -> Val.
+trunc_binary(_Key, <<Val/binary>>)                 -> Val;
+trunc_binary(_Key, <<>>)                           -> <<>>.
+
+dup_any(_Key, Val) -> {Val, Val}.
+    
 
 map_dict(Dict_Type, Dict, PD_Key) ->
     Exp_Size   = ?TM:size(Dict),
@@ -311,6 +339,22 @@ map_dict(Dict_Type, Dict, PD_Key) ->
                             _Small -> Val
                         end} || {Key, Val} <- Orig_Props],
     New_Dict   = ?TM:map(fun trunc_binary/2, Dict, pure_binary),
+    New_Props  = lists:sort(?TM:to_list(New_Dict)),
+    log_from_list_case(?TM:size(Dict), ?TM:size(New_Dict), Orig_Props),
+    log_from_list_case(?TM:size(Dict), ?TM:size(New_Dict), New_Props),
+    true       = ?TM:is_dict(New_Dict),
+    Exp_Size   = ?TM:size(New_Dict),
+    Exp_Props  = New_Props,
+    
+    %% Report the number of tests run for each Dict_Type.
+    put(PD_Key, orddict:update_counter(Dict_Type, 1, get(PD_Key))),
+    true.
+
+map_dup(Dict_Type, Dict, PD_Key, New_Keyval_Type) ->
+    Exp_Size   = ?TM:size(Dict),
+    Orig_Props = lists:sort(?TM:to_list(Dict)),
+    Exp_Props  = [{Key, {Val, Val}} || {Key, Val} <- Orig_Props],
+    New_Dict   = ?TM:map(fun dup_any/2, Dict, New_Keyval_Type),
     New_Props  = lists:sort(?TM:to_list(New_Dict)),
     log_from_list_case(?TM:size(Dict), ?TM:size(New_Dict), Orig_Props),
     log_from_list_case(?TM:size(Dict), ?TM:size(New_Dict), New_Props),
