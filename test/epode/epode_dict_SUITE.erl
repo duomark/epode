@@ -62,8 +62,8 @@ end_per_group(_Config) -> ok.
 
 
 %%%------------------------------------------------------------------------------
-%% Property:   New Dictionary
-%% Validation: Type matches request, and 0 elements exist in new dictionary.
+%%% Property:   New Dictionary
+%%% Validation: Type matches request, and 0 elements exist in new dictionary.
 %%%------------------------------------------------------------------------------
 
 -spec check_invalid_dict    (config()) -> ok.
@@ -204,8 +204,8 @@ valid_empty_dict(Dict_Type, Dict, PD_Key) ->
 
 
 %%%------------------------------------------------------------------------------
-%% Property:   New Dictionary from list of data
-%% Validation: Type matches request, and elements exist in new dictionary.
+%%% Property:   New Dictionary from list of data
+%%% Validation: Type matches request, and elements exist in new dictionary.
 %%%------------------------------------------------------------------------------
 
 -spec check_pure_binary_from_list (config()) -> ok.
@@ -255,7 +255,7 @@ make_orddict(Attrs) ->
 valid_starting_dict(Dict_Type, Dict, PD_Key, Orig_Props) ->
     Unshadowed_Props = make_orddict(Orig_Props),
     Exp_Size = orddict:size(Unshadowed_Props),
-    log_from_list_case(length(Orig_Props), Exp_Size, orddict:to_list(Unshadowed_Props)),
+    log_from_list_case(old, length(Orig_Props), Exp_Size, orddict:to_list(Unshadowed_Props)),
     true     = ?TM:is_dict(Dict),
     Exp_Size = ?TM:size(Dict),
     Unshadowed_Props = lists:sort(?TM:to_list(Dict)),
@@ -264,19 +264,6 @@ valid_starting_dict(Dict_Type, Dict, PD_Key, Orig_Props) ->
     put(PD_Key, orddict:update_counter(Dict_Type, 1, get(PD_Key))),
     true.
 
-log_from_list_case(0, 0, []) ->
-    ct:log("Num_Attrs: 0  Key_Size_Range: {0, 0}  Val_Size_Range {0, 0}~n", []);
-log_from_list_case(Num_Props, Num_Unique_Props, Unique_Props) ->
-    %% ct:log("Unshadowed: ~p (~p,~p)~n", [Unique_Props, Num_Props, Num_Unique_Props]),
-    {Key_Sizes, Val_Sizes}
-        = lists:foldl(fun({Key, Val}, {KSizes, VSizes}) ->
-                              {[elem_size(Key) | KSizes], [elem_size(Val) | VSizes]}
-                      end, {[], []}, Unique_Props),
-    {Min_Key, Max_Key} = {lists:min(Key_Sizes), lists:max(Key_Sizes)},
-    {Min_Val, Max_Val} = {lists:min(Val_Sizes), lists:max(Val_Sizes)},
-    ct:log("Num_Attrs: ~p  Key_Size_Range: ~p  Val_Size_Range ~p~n",
-           [{Num_Props, Num_Unique_Props}, {Min_Key, Max_Key}, {Min_Val, Max_Val}]).
-
 elem_size( Item) when is_list(Item)   -> length(Item);
 elem_size( Item) when is_binary(Item) -> byte_size(Item);
 elem_size( Item) when is_atom(Item)   -> length(atom_to_list(Item));
@@ -284,8 +271,8 @@ elem_size(_Item)                      -> -1.
 
 
 %%%------------------------------------------------------------------------------
-%% Property:   New Dictionary from list of data
-%% Validation: Type matches request, and elements exist in new dictionary.
+%%% Property:   New Dictionary from list of data
+%%% Validation: Type matches request, and elements exist in new dictionary.
 %%%------------------------------------------------------------------------------
 
 -spec check_pure_binary_map_fn (config()) -> ok.
@@ -340,8 +327,8 @@ map_dict(Dict_Type, Dict, PD_Key) ->
                         end} || {Key, Val} <- Orig_Props],
     New_Dict   = ?TM:map(fun trunc_binary/2, Dict, pure_binary),
     New_Props  = lists:sort(?TM:to_list(New_Dict)),
-    log_from_list_case(?TM:size(Dict), ?TM:size(New_Dict), Orig_Props),
-    log_from_list_case(?TM:size(Dict), ?TM:size(New_Dict), New_Props),
+    log_from_list_case(old, ?TM:size(Dict), ?TM:size(New_Dict), Orig_Props),
+    log_from_list_case(new, ?TM:size(Dict), ?TM:size(New_Dict), New_Props),
     true       = ?TM:is_dict(New_Dict),
     Exp_Size   = ?TM:size(New_Dict),
     Exp_Props  = New_Props,
@@ -356,8 +343,8 @@ map_dup(Dict_Type, Dict, PD_Key, New_Keyval_Type) ->
     Exp_Props  = [{Key, {Val, Val}} || {Key, Val} <- Orig_Props],
     New_Dict   = ?TM:map(fun dup_any/2, Dict, New_Keyval_Type),
     New_Props  = lists:sort(?TM:to_list(New_Dict)),
-    log_from_list_case(?TM:size(Dict), ?TM:size(New_Dict), Orig_Props),
-    log_from_list_case(?TM:size(Dict), ?TM:size(New_Dict), New_Props),
+    log_from_list_case(old, ?TM:size(Dict), ?TM:size(New_Dict), Orig_Props),
+    log_from_list_case(new, ?TM:size(Dict), ?TM:size(New_Dict), New_Props),
     true       = ?TM:is_dict(New_Dict),
     Exp_Size   = ?TM:size(New_Dict),
     Exp_Props  = New_Props,
@@ -368,5 +355,65 @@ map_dup(Dict_Type, Dict, PD_Key, New_Keyval_Type) ->
     
 
 check_xlate_fn(_Config) ->
-    Log_Stmt = "Test translating keys and values to a new dictionary",
+    Log_Stmt = "Test translating keys and values to a new dictionary (~p tests)",
+    true = epode_common_test:test_count_wrapper(Log_Stmt, ct_check_map, fun xlate_atomkey_stringval/2, 100),
     ok.
+
+xlate_atomkey_stringval(PD_Key, Num_Tests) ->
+    Test = ?FORALL({Dict_Type, Attr_List, New_Dict_Type, New_Keyval_Type},
+                   {epode_bdict_type(), list({non_empty(binary()), binary()}),
+                    epode_atom_dict_type(), epode_keyval_non_binary_type()},
+
+                   xlate_atom_attrs(?TM:from_list(Dict_Type, pure_binary, Attr_List), New_Dict_Type, PD_Key, New_Keyval_Type)),
+    proper:quickcheck(Test, ?PQ_NUM(Num_Tests)).
+
+atom_attrs(Key, Val) -> {list_to_atom(binary_to_list(Key)), binary_to_list(Val)}.
+
+xlate_atom_attrs({Old_Dict_Type, Old_Keyval_Type, _} = Dict, New_Dict_Type, PD_Key, New_Keyval_Type) ->
+    Exp_Size   = ?TM:size(Dict),
+    Orig_Props = lists:sort(?TM:to_list(Dict)),
+    Exp_Props  = [{list_to_atom(binary_to_list(Key)), binary_to_list(Val)} || {Key, Val} <- Orig_Props],
+    New_Dict   = ?TM:xlate(fun atom_attrs/2, Dict, New_Dict_Type, New_Keyval_Type),
+    New_Props  = lists:sort(?TM:to_list(New_Dict)),
+    log_from_xlate_case(old, ?TM:size(Dict), ?TM:size(New_Dict), Orig_Props, Old_Dict_Type, Old_Keyval_Type),
+    log_from_xlate_case(new, ?TM:size(Dict), ?TM:size(New_Dict), New_Props,  New_Dict_Type, New_Keyval_Type),
+    true       = ?TM:is_dict(New_Dict),
+    Exp_Size   = ?TM:size(New_Dict),
+    Exp_Props  = New_Props,
+    
+    %% Report the number of tests run for each Dict_Type.
+    put(PD_Key, orddict:update_counter(New_Dict_Type, 1, get(PD_Key))),
+    true.
+
+
+%%%------------------------------------------------------------------------------
+%%% Logging functions
+%%%------------------------------------------------------------------------------
+
+log_from_list_case(Old_Or_New, 0, 0, []) ->
+    ct:log("~p Num_Attrs: 0  Key_Size_Range: {0, 0}  Val_Size_Range {0, 0}~n", [Old_Or_New]);
+log_from_list_case(Old_Or_New, Num_Props, Num_Unique_Props, Unique_Props) ->
+    %% ct:log("~p Unshadowed: ~p (~p,~p)~n", [Old_Or_New, Unique_Props, Num_Props, Num_Unique_Props]),
+    {Key_Sizes, Val_Sizes}
+        = lists:foldl(fun({Key, Val}, {KSizes, VSizes}) ->
+                              {[elem_size(Key) | KSizes], [elem_size(Val) | VSizes]}
+                      end, {[], []}, Unique_Props),
+    {Min_Key, Max_Key} = {lists:min(Key_Sizes), lists:max(Key_Sizes)},
+    {Min_Val, Max_Val} = {lists:min(Val_Sizes), lists:max(Val_Sizes)},
+    ct:log("~p Num_Attrs: ~p  Key_Size_Range: ~p  Val_Size_Range ~p~n",
+           [Old_Or_New, {Num_Props, Num_Unique_Props}, {Min_Key, Max_Key}, {Min_Val, Max_Val}]).
+
+log_from_xlate_case(Old_Or_New, 0, 0, [], Dict_Type, Keyval_Type) ->
+    ct:log("~p Num_Attrs: 0  Key_Size_Range: {0, 0}  Val_Size_Range {0, 0}  Dict: ~p ~n",
+           [Old_Or_New, {Dict_Type, Keyval_Type}]);
+log_from_xlate_case(Old_Or_New, Num_Props, Num_Unique_Props, Unique_Props, Dict_Type, Keyval_Type) ->
+    %% ct:log("~p Unshadowed: ~p (~p,~p)~n", [Old_Or_New, Unique_Props, Num_Props, Num_Unique_Props]),
+    {Key_Sizes, Val_Sizes}
+        = lists:foldl(fun({Key, Val}, {KSizes, VSizes}) ->
+                              {[elem_size(Key) | KSizes], [elem_size(Val) | VSizes]}
+                      end, {[], []}, Unique_Props),
+    {Min_Key, Max_Key} = {lists:min(Key_Sizes), lists:max(Key_Sizes)},
+    {Min_Val, Max_Val} = {lists:min(Val_Sizes), lists:max(Val_Sizes)},
+    ct:log("~p Num_Attrs: ~p  Key_Size_Range: ~p  Val_Size_Range ~p Dict: ~p~n",
+           [Old_Or_New, {Num_Props, Num_Unique_Props}, {Min_Key, Max_Key},
+            {Min_Val, Max_Val}, {Dict_Type, Keyval_Type}]).
