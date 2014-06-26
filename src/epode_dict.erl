@@ -34,14 +34,15 @@
 -type binary_dict_list() :: dict_list(binary(), binary()).
 -type atom_dict_list()   :: dict_list(atom(),   any()).
 -type any_dict_list()    :: dict_list(any(),    any()).
+-type dict_type_error()  :: {error, {invalid_types, {any(), any()}}}.
 
--spec new       (epode_bdict_type(), epode_keyval_binary_type() ) -> epode_bin_dict();
-                (epode_edict_type(), epode_keyval_atom_type()   ) -> epode_atom_dict();
-                (epode_edict_type(), epode_keyval_any_type()    ) -> epode_any_dict().
+-spec new       (epode_bdict_type(), epode_keyval_binary_type() ) -> epode_bin_dict()  | dict_type_error();
+                (epode_edict_type(), epode_keyval_atom_type()   ) -> epode_atom_dict() | dict_type_error();
+                (epode_edict_type(), epode_keyval_any_type()    ) -> epode_any_dict()  | dict_type_error().
 
--spec from_list (epode_bdict_type(),     epode_keyval_binary_type(), binary_dict_list() ) -> epode_bin_dict();
-                (epode_atom_dict_type(), epode_keyval_atom_type(),   atom_dict_list()   ) -> epode_atom_dict();
-                (epode_any_dict_type(),  epode_keyval_any_type(),    any_dict_list()    ) -> epode_any_dict().
+-spec from_list (epode_bdict_type(),     epode_keyval_binary_type(), binary_dict_list() ) -> epode_bin_dict()  | dict_type_error();
+                (epode_atom_dict_type(), epode_keyval_atom_type(),   atom_dict_list()   ) -> epode_atom_dict() | dict_type_error();
+                (epode_any_dict_type(),  epode_keyval_any_type(),    any_dict_list()    ) -> epode_any_dict()  | dict_type_error().
 
 -spec to_list   (epode_bin_dict())  -> binary_dict_list();
                 %% If overloaded types allowed: (epode_atom_dict()) -> atom_dict_list();
@@ -54,15 +55,17 @@
 %% vbisect is the only dictionary that is restricted with key value types.
 new(dict,    Keyval_Type) when ?IS_VALID_KEYVAL(Keyval_Type) -> {dict,    Keyval_Type, dict   :new()};
 new(orddict, Keyval_Type) when ?IS_VALID_KEYVAL(Keyval_Type) -> {orddict, Keyval_Type, orddict:new()};
-new(vbisect, pure_binary)                                    -> {vbisect, pure_binary, vbisect:from_orddict([])}.
+new(vbisect, pure_binary)                                    -> {vbisect, pure_binary, vbisect:from_orddict([])};
+new(Dict,    Keyval_Type)                                    -> {error, {invalid_types, {Dict, Keyval_Type}}}.
 
 %% Construct a dictionary from a list of Attribute / Value pairs.
 %% The source list is treated as a proplist so that the caller can push
 %% contexts onto the front of the attribute list to efficiently provide
 %% overrides for already specified attributes.
-from_list(dict,    Keyval_Type, Attrs) when ?IS_VALID_KEYVAL(Keyval_Type) -> {dict,    Keyval_Type, make_dict    (Attrs)};
-from_list(orddict, Keyval_Type, Attrs) when ?IS_VALID_KEYVAL(Keyval_Type) -> {orddict, Keyval_Type, make_orddict (Attrs)};
-from_list(vbisect, pure_binary, Attrs)                                    -> {vbisect, pure_binary, vbisect:from_orddict (make_orddict(Attrs))}.
+from_list(dict,    Keyval_Type,  Attrs) when ?IS_VALID_KEYVAL(Keyval_Type) -> {dict,    Keyval_Type, make_dict    (Attrs)};
+from_list(orddict, Keyval_Type,  Attrs) when ?IS_VALID_KEYVAL(Keyval_Type) -> {orddict, Keyval_Type, make_orddict (Attrs)};
+from_list(vbisect, pure_binary,  Attrs)                                    -> {vbisect, pure_binary, vbisect:from_orddict (make_orddict(Attrs))};
+from_list(Dict,    Keyval_Type, _Attrs)                                    -> {error, {invalid_types, {Dict, Keyval_Type}}}.
 
 to_list(Dict) -> 
     case dict_type(Dict) of
@@ -147,25 +150,30 @@ size(not_a_dict,  _Bad_Dict) -> not_a_dict.
 %%%------------------------------------------------------------------------------
 
 %% Mapping has the potential to change all values.
--type map_fn()   :: fun((Key1::epode_attr(), Value1::epode_value())
-                        -> Value2::epode_value()).
+-type map_error() :: {error, {invalid_map_result, {any(), any()}}}.
+-type map_fn()    :: fun((Key1::epode_attr(), Value1::epode_value())
+                         -> Value2::epode_value()).
 
 %% Translation has the potential to change all keys and values.
--type xlate_fn() :: fun((Key1::epode_attr(), Value1::epode_value())
-                        -> {Key2::epode_attr(), Value2::epode_value()} | undefined).
+-type xlate_error() :: {error, {invalid_xlate_result, {any(), any(), any()}}}.
+-type xlate_fn()    :: fun((Key1::epode_attr(), Value1::epode_value())
+                           -> {Key2::epode_attr(), Value2::epode_value()} | undefined).
 
--spec map       (map_fn(),   epode_dict(), epode_all_dict_type())                        -> epode_dict() | not_a_dict.
--spec xlate     (xlate_fn(), epode_dict(), epode_all_dict_type(), epode_all_dict_type()) -> epode_dict() | not_a_dict.
+-spec map       (map_fn(),   epode_dict(), epode_all_dict_type())                        -> epode_dict() | not_a_dicto | map_error().
+-spec xlate     (xlate_fn(), epode_dict(), epode_all_dict_type(), epode_all_dict_type()) -> epode_dict() | not_a_dict | xlate_error().
              
 %% Convert just the values (keeping the old attributes) to generate a new dictionary of the same style.
 map(User_Map_Fn, Dict, New_Keyval_Type) when ?IS_VALID_KEYVAL(New_Keyval_Type) ->
     Map_Fn = possibly_wrap_map_fn(User_Map_Fn, New_Keyval_Type),
     case {dict_type(Dict), New_Keyval_Type} of
-        {dict,              _} -> {dict,    New_Keyval_Type, dict   :map(Map_Fn, bare_dict(Dict))};
-        {orddict,           _} -> {orddict, New_Keyval_Type, orddict:map(Map_Fn, bare_dict(Dict))};
-        {vbisect, pure_binary} -> {vbisect, New_Keyval_Type, vbisect:map(Map_Fn, bare_dict(Dict))};
-        {not_a_dict,        _} -> not_a_dict
-    end.
+        {not_a_dict,              _} -> not_a_dict;
+        {dict,                    _} -> {dict,    New_Keyval_Type, dict   :map(Map_Fn, bare_dict(Dict))};
+        {orddict,                 _} -> {orddict, New_Keyval_Type, orddict:map(Map_Fn, bare_dict(Dict))};
+        {vbisect,       pure_binary} -> {vbisect, New_Keyval_Type, vbisect:map(Map_Fn, bare_dict(Dict))};
+        {Dict_Type, New_Keyval_Type} -> {error, {invalid_map_result, {Dict_Type, New_Keyval_Type}}}
+    end;
+map(_Map_Fn, Dict,  New_Keyval_Type) -> {error, {invalid_map_result, {dict_type(Dict), New_Keyval_Type}}}.
+
 
 possibly_wrap_map_fn(Map_Fn, pure_binary) -> map_to_pure_binary_fn(Map_Fn);
 possibly_wrap_map_fn(Map_Fn, _Not_Binary) -> Map_Fn.
@@ -188,13 +196,17 @@ xlate(User_Xlate_Fn, Dict, New_Dict_Type, New_Keyval_Type) when ?IS_VALID_KEYVAL
     case dict_type(Dict) of
         not_a_dict    -> not_a_dict;
         Old_Dict_Type -> xlate_valid(Old_Dict_Type, New_Dict_Type, New_Keyval_Type, User_Xlate_Fn, bare_dict(Dict))
-    end.
+    end;
+xlate(_Fn, Dict, New_Dict_Type, New_Keyval_Type) ->
+    {error, {invalid_xlate_result, {dict_type(Dict), New_Dict_Type, New_Keyval_Type}}}.
 
 xlate_valid(Old_Dict_Type, vbisect, pure_binary, User_Xlate_Fn, Bare_Dict) ->
     ?MAP_XLATE(Old_Dict_Type, vbisect, pure_binary, User_Xlate_Fn, Bare_Dict);
 xlate_valid(Old_Dict_Type, New_Dict_Type, New_Keyval_Type, User_Xlate_Fn, Bare_Dict)
   when New_Dict_Type =/= vbisect ->
-    ?MAP_XLATE(Old_Dict_Type, New_Dict_Type, New_Keyval_Type, User_Xlate_Fn, Bare_Dict).
+    ?MAP_XLATE(Old_Dict_Type, New_Dict_Type, New_Keyval_Type, User_Xlate_Fn, Bare_Dict);
+xlate_valid(Old_Dict_Type, New_Dict_Type, New_Keyval_Type, _User_Xlate_Fn, _Bare_Dict) ->
+    {error, {invalid_xlate_result, {Old_Dict_Type, New_Dict_Type, New_Keyval_Type}}}.
 
 
 %% TODO: This function needs to systematically handle generating duplicate attributes.

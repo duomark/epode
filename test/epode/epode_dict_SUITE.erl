@@ -88,8 +88,10 @@ check_invalid_dict(_Config) ->
     not_a_dict = lists:foldl(fun(Item, not_a_dict) -> ?TM:to_list (Item) end, not_a_dict, Bad_Dicts),
     not_a_dict = lists:foldl(fun(Item, not_a_dict) -> ?TM:size    (Item) end, not_a_dict, Bad_Dicts),
 
-    not_a_dict = lists:foldl(fun(Item, not_a_dict) -> ?TM:map   (fun map_fn/2,   Item, any) end, not_a_dict, Bad_Dicts),
-    not_a_dict = lists:foldl(fun(Item, not_a_dict) -> ?TM:xlate (fun xlate_fn/2, Item, any) end, not_a_dict, Bad_Dicts),
+    not_a_dict = lists:foldl(fun(Item, not_a_dict) -> ?TM:map   (fun map_fn/2,   Item, any)          end, not_a_dict, Bad_Dicts),
+    not_a_dict = lists:foldl(fun(Item, not_a_dict) -> ?TM:xlate (fun xlate_fn/2, Item, dict,    any) end, not_a_dict, Bad_Dicts),
+    not_a_dict = lists:foldl(fun(Item, not_a_dict) -> ?TM:xlate (fun xlate_fn/2, Item, orddict, any) end, not_a_dict, Bad_Dicts),
+    not_a_dict = lists:foldl(fun(Item, not_a_dict) -> ?TM:xlate (fun xlate_fn/2, Item, vbisect, any) end, not_a_dict, Bad_Dicts),
 
     ct:comment("Tested: ~p", [Bad_Dicts]),
     ok.
@@ -108,42 +110,54 @@ check_invalid_dict(_Config) ->
 
 check_invalid_keyval(_Config) ->
     ct:log("Crash epode_dict:new/2 function calls with invalid keyval types"),
-    crash = ?FN_CLAUSE_CRASH( ?TM:new       (foo,     any)  ),
-    crash = ?FN_CLAUSE_CRASH( ?TM:new       (dict,    foo)  ),
-    crash = ?FN_CLAUSE_CRASH( ?TM:new       (orddict, foo)  ),
-    crash = ?FN_CLAUSE_CRASH( ?TM:new       (vbisect, foo)  ),
-    crash = ?FN_CLAUSE_CRASH( ?TM:new       (vbisect, any)  ),
-    crash = ?FN_CLAUSE_CRASH( ?TM:new       (vbisect, atom_attrs) ),
+    {error, {invalid_types, {foo,     any}}}        = ?TM:new       (foo,     any),
+    {error, {invalid_types, {dict,    foo}}}        = ?TM:new       (dict,    foo),
+    {error, {invalid_types, {orddict, foo}}}        = ?TM:new       (orddict, foo),
+    {error, {invalid_types, {vbisect, foo}}}        = ?TM:new       (vbisect, foo),
+    {error, {invalid_types, {vbisect, any}}}        = ?TM:new       (vbisect, any),
+    {error, {invalid_types, {vbisect, atom_attrs}}} = ?TM:new       (vbisect, atom_attrs),
 
     ct:log("Crash epode_dict:from_list/3 function calls with invalid keyval types"),
-    crash = ?FN_CLAUSE_CRASH( ?TM:from_list (foo,     any,  []) ),
-    crash = ?FN_CLAUSE_CRASH( ?TM:from_list (dict,    foo,  []) ),
-    crash = ?FN_CLAUSE_CRASH( ?TM:from_list (orddict, foo,  []) ),
-    crash = ?FN_CLAUSE_CRASH( ?TM:from_list (vbisect, foo,  []) ),
-    crash = ?FN_CLAUSE_CRASH( ?TM:from_list (vbisect, any,  []) ),
-    crash = ?FN_CLAUSE_CRASH( ?TM:from_list (vbisect, atom_attrs, []) ),
+    {error, {invalid_types, {foo,     any}}}        = ?TM:from_list (foo,     any, []),
+    {error, {invalid_types, {dict,    foo}}}        = ?TM:from_list (dict,    foo, []),
+    {error, {invalid_types, {orddict, foo}}}        = ?TM:from_list (orddict, foo, []),
+    {error, {invalid_types, {vbisect, foo}}}        = ?TM:from_list (vbisect, foo, []),
+    {error, {invalid_types, {vbisect, any}}}        = ?TM:from_list (vbisect, any, []),
+    {error, {invalid_types, {vbisect, atom_attrs}}} = ?TM:from_list (vbisect, atom_attrs, []),
 
     ct:log("Crash epode_dict:map/2 and xlate/3 function calls with invalid keyval type"),
-    crash = ?FN_CLAUSE_CRASH   ( ?TM:map   (fun map_fn/2,   ?DICT_DICT,    foo)  ),
-    crash = ?FN_CLAUSE_CRASH   ( ?TM:map   (fun map_fn/2,   ?ORDDICT_DICT, foo)  ),
-    crash = ?FN_CLAUSE_CRASH   ( ?TM:map   (fun map_fn/2,   ?VBISECT_DICT, foo)  ),
-    crash = ?CASE_CLAUSE_CRASH ( ?TM:map   (fun map_fn/2,   ?VBISECT_DICT, any)  ),
-    crash = ?CASE_CLAUSE_CRASH ( ?TM:map   (fun map_fn/2,   ?VBISECT_DICT, atom_attrs) ),
+    {error, {invalid_map_result, {dict,    foo}}}        = ?TM:map   (fun map_fn/2,   ?DICT_DICT,    foo),
+    {error, {invalid_map_result, {orddict, foo}}}        = ?TM:map   (fun map_fn/2,   ?ORDDICT_DICT, foo),
+    {error, {invalid_map_result, {vbisect, foo}}}        = ?TM:map   (fun map_fn/2,   ?VBISECT_DICT, foo),
+    {error, {invalid_map_result, {vbisect, any}}}        = ?TM:map   (fun map_fn/2,   ?VBISECT_DICT, any),
+    {error, {invalid_map_result, {vbisect, atom_attrs}}} = ?TM:map   (fun map_fn/2,   ?VBISECT_DICT, atom_attrs),
 
-    crash = ?FN_CLAUSE_CRASH   ( ?TM:xlate (fun xlate_fn/2, ?DICT_DICT,    foo)  ),
-    crash = ?FN_CLAUSE_CRASH   ( ?TM:xlate (fun xlate_fn/2, ?ORDDICT_DICT, foo)  ),
-    crash = ?FN_CLAUSE_CRASH   ( ?TM:xlate (fun xlate_fn/2, ?VBISECT_DICT, foo)  ),
-    crash = ?CASE_CLAUSE_CRASH ( ?TM:xlate (fun xlate_fn/2, ?VBISECT_DICT, any)  ),
-    crash = ?CASE_CLAUSE_CRASH ( ?TM:xlate (fun xlate_fn/2, ?VBISECT_DICT, atom_attrs) ),
+    {error, {invalid_xlate_result, {dict,    dict,    foo}}}        = ?TM:xlate (fun xlate_fn/2, ?DICT_DICT,    dict,    foo),
+    {error, {invalid_xlate_result, {dict,    orddict, foo}}}        = ?TM:xlate (fun xlate_fn/2, ?DICT_DICT,    orddict, foo),
+    {error, {invalid_xlate_result, {dict,    vbisect, foo}}}        = ?TM:xlate (fun xlate_fn/2, ?DICT_DICT,    vbisect, foo),
+    {error, {invalid_xlate_result, {orddict, dict,    foo}}}        = ?TM:xlate (fun xlate_fn/2, ?ORDDICT_DICT, dict,    foo),
+    {error, {invalid_xlate_result, {orddict, orddict, foo}}}        = ?TM:xlate (fun xlate_fn/2, ?ORDDICT_DICT, orddict, foo),
+    {error, {invalid_xlate_result, {orddict, vbisect, foo}}}        = ?TM:xlate (fun xlate_fn/2, ?ORDDICT_DICT, vbisect, foo),
+    {error, {invalid_xlate_result, {vbisect, dict,    foo}}}        = ?TM:xlate (fun xlate_fn/2, ?VBISECT_DICT, dict,    foo),
+    {error, {invalid_xlate_result, {vbisect, orddict, foo}}}        = ?TM:xlate (fun xlate_fn/2, ?VBISECT_DICT, orddict, foo),
+    {error, {invalid_xlate_result, {vbisect, vbisect, foo}}}        = ?TM:xlate (fun xlate_fn/2, ?VBISECT_DICT, vbisect, foo),
+    {error, {invalid_xlate_result, {dict,    vbisect, any}}}        = ?TM:xlate (fun xlate_fn/2, ?DICT_DICT,    vbisect, any),
+    {error, {invalid_xlate_result, {orddict, vbisect, any}}}        = ?TM:xlate (fun xlate_fn/2, ?ORDDICT_DICT, vbisect, any),
+    {error, {invalid_xlate_result, {vbisect, vbisect, any}}}        = ?TM:xlate (fun xlate_fn/2, ?VBISECT_DICT, vbisect, any),
+    {error, {invalid_xlate_result, {dict,    vbisect, atom_attrs}}} = ?TM:xlate (fun xlate_fn/2, ?DICT_DICT,    vbisect, atom_attrs),
+    {error, {invalid_xlate_result, {orddict, vbisect, atom_attrs}}} = ?TM:xlate (fun xlate_fn/2, ?ORDDICT_DICT, vbisect, atom_attrs),
+    {error, {invalid_xlate_result, {vbisect, vbisect, atom_attrs}}} = ?TM:xlate (fun xlate_fn/2, ?VBISECT_DICT, vbisect, atom_attrs),
 
     ct:log("Crash epode_dict:map/2 and xlate/3 function calls with invalid dict internal types"),
     crash = ?CASE_CLAUSE_CRASH   ( ?TM:map   (fun map_fn/2,   ?DICT_BAD_DICT,    pure_binary) ),
     crash = ?CASE_CLAUSE_CRASH   ( ?TM:map   (fun map_fn/2,   ?ORDDICT_BAD_DICT, pure_binary) ),
-    crash = ?CASE_CLAUSE_CRASH   ( ?TM:xlate (fun xlate_fn/2, ?DICT_BAD_DICT,    pure_binary) ),
-    crash = ?CASE_CLAUSE_CRASH   ( ?TM:xlate (fun xlate_fn/2, ?ORDDICT_BAD_DICT, pure_binary) ),
+    crash = ?CASE_CLAUSE_CRASH   ( ?TM:xlate (fun xlate_fn/2, ?DICT_BAD_DICT,    dict,    pure_binary) ),
+    crash = ?CASE_CLAUSE_CRASH   ( ?TM:xlate (fun xlate_fn/2, ?ORDDICT_BAD_DICT, orddict, pure_binary) ),
 
     not_a_dict = ?TM:map   (fun map_fn/2,   ?VBISECT_BAD_DICT, pure_binary),
-    not_a_dict = ?TM:xlate (fun xlate_fn/2, ?VBISECT_BAD_DICT, pure_binary),
+    not_a_dict = ?TM:xlate (fun xlate_fn/2, ?VBISECT_BAD_DICT, dict,    pure_binary),
+    not_a_dict = ?TM:xlate (fun xlate_fn/2, ?VBISECT_BAD_DICT, orddict, pure_binary),
+    not_a_dict = ?TM:xlate (fun xlate_fn/2, ?VBISECT_BAD_DICT, vbisect, pure_binary),
 
     ct:comment("Tested: ~p", [[new, from_list, map, xlate]]),
     ok.
@@ -294,7 +308,7 @@ map_dict(Dict_Type, Dict, PD_Key) ->
     Orig_Props = lists:sort(?TM:to_list(Dict)),
     Exp_Props  = [{Key, case byte_size(Val) of 
                             Big when Big > 3 -> binary:part(Val, {0, 3});
-                            Small -> Val
+                            _Small -> Val
                         end} || {Key, Val} <- Orig_Props],
     New_Dict   = ?TM:map(fun trunc_binary/2, Dict, pure_binary),
     New_Props  = lists:sort(?TM:to_list(New_Dict)),
@@ -303,7 +317,6 @@ map_dict(Dict_Type, Dict, PD_Key) ->
     true       = ?TM:is_dict(New_Dict),
     Exp_Size   = ?TM:size(New_Dict),
     Exp_Props  = New_Props,
-
     
     %% Report the number of tests run for each Dict_Type.
     put(PD_Key, orddict:update_counter(Dict_Type, 1, get(PD_Key))),
