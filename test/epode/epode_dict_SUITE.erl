@@ -24,7 +24,7 @@
          check_pure_binary_new/1,       check_atom_new/1,       check_any_new/1,
          check_pure_binary_from_list/1, check_atom_from_list/1, check_any_from_list/1,
          check_pure_binary_map_fn/1,    check_atom_map_fn/1,    check_any_map_fn/1,
-         check_xlate_fn/1
+         check_bin_xlate_fn/1,          check_atom_xlate_fn/1
         ]).
 
 -include("../epode_common_test.hrl").
@@ -47,7 +47,7 @@ groups() -> [
              {make_dict,    [sequence], [check_pure_binary_new,       check_atom_new,       check_any_new]},
              {from_list,    [sequence], [check_pure_binary_from_list, check_atom_from_list, check_any_from_list]},
              {map_fn,       [sequence], [check_pure_binary_map_fn,    check_atom_map_fn,    check_any_map_fn]},
-             {xlate_fn,     [sequence], [check_xlate_fn]}
+             {xlate_fn,     [sequence], [check_bin_xlate_fn,          check_atom_xlate_fn]}
             ].
 
 init_per_suite(Config) -> Config.
@@ -279,7 +279,8 @@ elem_size(_Item)                      -> -1.
 -spec check_atom_map_fn        (config()) -> ok.
 -spec check_any_map_fn         (config()) -> ok.
 
--spec check_xlate_fn           (config()) -> ok.
+-spec check_bin_xlate_fn       (config()) -> ok.
+-spec check_atom_xlate_fn      (config()) -> ok.
 
 check_pure_binary_map_fn(_Config) ->
     Log_Stmt = "Test mapping values to a new dictionary (~p tests)",
@@ -354,9 +355,14 @@ map_dup(Dict_Type, Dict, PD_Key, New_Keyval_Type) ->
     true.
     
 
-check_xlate_fn(_Config) ->
+check_bin_xlate_fn(_Config) ->
     Log_Stmt = "Test translating keys and values to a new dictionary (~p tests)",
     true = epode_common_test:test_count_wrapper(Log_Stmt, ct_check_map, fun xlate_atomkey_stringval/2, 100),
+    ok.
+
+check_atom_xlate_fn(_Config) ->
+    Log_Stmt = "Test translating keys and values to a new dictionary (~p tests)",
+    true = epode_common_test:test_count_wrapper(Log_Stmt, ct_check_map, fun xlate_atoms_to_bin/2, 100),
     ok.
 
 xlate_atomkey_stringval(PD_Key, Num_Tests) ->
@@ -367,13 +373,38 @@ xlate_atomkey_stringval(PD_Key, Num_Tests) ->
                    xlate_atom_attrs(?TM:from_list(Dict_Type, pure_binary, Attr_List), New_Dict_Type, PD_Key, New_Keyval_Type)),
     proper:quickcheck(Test, ?PQ_NUM(Num_Tests)).
 
-atom_attrs(Key, Val) -> {list_to_atom(binary_to_list(Key)), binary_to_list(Val)}.
+xlate_atoms_to_bin(PD_Key, Num_Tests) ->
+    Test = ?FORALL({Dict_Type, Attr_List, New_Dict_Type, New_Keyval_Type},
+                   {epode_atom_dict_type(), list({atom(), binary()}),
+                    epode_bdict_type(), epode_keyval_binary_type()},
+
+                   xlate_atoms_to_bins(?TM:from_list(Dict_Type, atom_attrs, Attr_List), New_Dict_Type, PD_Key, New_Keyval_Type)),
+    proper:quickcheck(Test, ?PQ_NUM(Num_Tests)).
+
+atom_attrs(Key, Val)        -> {list_to_atom(binary_to_list(Key)), binary_to_list(Val)}.
+atom_to_bin_attrs(Key, Val) -> {list_to_binary(atom_to_list(Key)), term_to_binary(Val)}.
 
 xlate_atom_attrs({Old_Dict_Type, Old_Keyval_Type, _} = Dict, New_Dict_Type, PD_Key, New_Keyval_Type) ->
     Exp_Size   = ?TM:size(Dict),
     Orig_Props = lists:sort(?TM:to_list(Dict)),
     Exp_Props  = [{list_to_atom(binary_to_list(Key)), binary_to_list(Val)} || {Key, Val} <- Orig_Props],
     New_Dict   = ?TM:xlate(fun atom_attrs/2, Dict, New_Dict_Type, New_Keyval_Type),
+    New_Props  = lists:sort(?TM:to_list(New_Dict)),
+    log_from_xlate_case(old, ?TM:size(Dict), ?TM:size(New_Dict), Orig_Props, Old_Dict_Type, Old_Keyval_Type),
+    log_from_xlate_case(new, ?TM:size(Dict), ?TM:size(New_Dict), New_Props,  New_Dict_Type, New_Keyval_Type),
+    true       = ?TM:is_dict(New_Dict),
+    Exp_Size   = ?TM:size(New_Dict),
+    Exp_Props  = New_Props,
+    
+    %% Report the number of tests run for each Dict_Type.
+    put(PD_Key, orddict:update_counter(New_Dict_Type, 1, get(PD_Key))),
+    true.
+
+xlate_atoms_to_bins({Old_Dict_Type, Old_Keyval_Type, _} = Dict, New_Dict_Type, PD_Key, New_Keyval_Type) ->
+    Exp_Size   = ?TM:size(Dict),
+    Orig_Props = lists:sort(?TM:to_list(Dict)),
+    Exp_Props  = [{list_to_binary(atom_to_list(Key)), term_to_binary(Val)} || {Key, Val} <- Orig_Props],
+    New_Dict   = ?TM:xlate(fun atom_to_bin_attrs/2, Dict, New_Dict_Type, New_Keyval_Type),
     New_Props  = lists:sort(?TM:to_list(New_Dict)),
     log_from_xlate_case(old, ?TM:size(Dict), ?TM:size(New_Dict), Orig_Props, Old_Dict_Type, Old_Keyval_Type),
     log_from_xlate_case(new, ?TM:size(Dict), ?TM:size(New_Dict), New_Props,  New_Dict_Type, New_Keyval_Type),
