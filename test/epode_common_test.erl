@@ -15,11 +15,11 @@
 -export([test_count_wrapper/4]).
 
 
-%% Log and verify results of a single PropEr test case
+%% Log and verify results of a single (repeated) PropEr test case
 test_count_wrapper(Log_Stmt, PD_Key, Test_Fn, Num_Tests) ->
-    Old_PD_Value = put(PD_Key, []),
+    Old_PD_Value = put(PD_Key, orddict:new()),
     ct:log(Log_Stmt, [Num_Tests]),
     Result = Test_Fn(PD_Key, Num_Tests),
-    ct:comment("Tested: ~p", [get(PD_Key)]),
+    ct:comment("Tested: ~p", [orddict:to_list(get(PD_Key))]),
     put(PD_Key, Old_PD_Value),
     Result.
