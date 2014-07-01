@@ -23,7 +23,7 @@
          xlate/4            % Convert attributes and values
         ]).
 
--include("epode.hrl").
+-include("../include/epode.hrl").
 
 
 %%%------------------------------------------------------------------------------
