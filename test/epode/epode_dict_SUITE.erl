@@ -363,13 +363,17 @@ check_bin_xlate_fn(_Config) ->
     ok.
 
 check_atom_xlate_fn(_Config) ->
-    Log_Stmt = "Test translating atom keys and values to a new binary dictionary (~p tests)",
-    true = epode_common_test:test_count_wrapper(Log_Stmt, ct_check_map, fun xlate_atoms_to_bin/2, 100),
+    Log_Stmt_1 = "Test translating atom keys and values to a new binary dictionary (~p tests)",
+    true = epode_common_test:test_count_wrapper(Log_Stmt_1, ct_check_map, fun xlate_atoms_to_bin/2, 100),
+    Log_Stmt_2 = "Test translating atom keys and values to a new any dictionary (~p tests)",
+    true = epode_common_test:test_count_wrapper(Log_Stmt_2, ct_check_map, fun xlate_atoms_to_bin/2, 100),
     ok.
 
 check_any_xlate_fn(_Config) ->
-    Log_Stmt = "Test translating atom keys and values to a new any dictionary (~p tests)",
-    true = epode_common_test:test_count_wrapper(Log_Stmt, ct_check_map, fun xlate_atoms_to_bin/2, 100),
+    Log_Stmt_1 = "Test translating any keys and values to a new atom dictionary (~p tests)",
+    true = epode_common_test:test_count_wrapper(Log_Stmt_1, ct_check_map, fun xlate_any_to_atoms/2, 100),
+    Log_Stmt_2 = "Test translating any keys and values to a new binary dictionary (~p tests)",
+    true = epode_common_test:test_count_wrapper(Log_Stmt_2, ct_check_map, fun xlate_any_to_bin/2, 100),
     ok.
 
 xlate_atomkey_stringval(PD_Key, Num_Tests) ->
@@ -403,10 +407,35 @@ xlate_atoms_to_bin(PD_Key, Num_Tests) ->
                                New_Dict_Type, PD_Key, New_Keyval_Type, fun atom_to_bin_attrs/2)),
     proper:quickcheck(Test, ?PQ_NUM(Num_Tests)).
 
-atom_to_any_attrs (Key, Val) -> {atom_to_list(Key), {value, byte_size(Val)}}.
-atom_to_bin_attrs (Key, Val) -> {list_to_binary(atom_to_list(Key)), term_to_binary(Val)}.
-bin_to_atom_attrs (Key, Val) -> {list_to_atom(binary_to_list(Key) ++ "-atom"), {value, binary_to_list(Val)}}.
-bin_to_any_attrs  (Key, Val) -> {binary_to_list(Key), binary_to_list(Val)}.
+xlate_any_to_atoms(PD_Key, Num_Tests) ->
+    Test = ?FORALL({Dict_Type, Attr_List, New_Dict_Type, New_Keyval_Type},
+                   {epode_any_dict_type(), list({atom(), any()}),
+                    epode_atom_dict_type(), epode_keyval_atom_type()},
+
+                   begin
+                       Old_Dict = ?TM:from_list(Dict_Type, any,
+                                                [{list_to_binary(atom_to_list(K)), V}
+                                                 || {K,V} <- Attr_List, K =/= '']),
+                       xlate_attrs(Old_Dict, New_Dict_Type, PD_Key, New_Keyval_Type, fun any_to_atom_attrs/2)
+                   end),
+    proper:quickcheck(Test, ?PQ_NUM(Num_Tests)).
+
+xlate_any_to_bin(PD_Key, Num_Tests) ->
+    Test = ?FORALL({Dict_Type, Attr_List, New_Dict_Type, New_Keyval_Type},
+                   {epode_any_dict_type(), list({any(), any()}),
+                    epode_bdict_type(), epode_keyval_binary_type()},
+
+                   xlate_attrs(?TM:from_list(Dict_Type, any, Attr_List),
+                               New_Dict_Type, PD_Key, New_Keyval_Type, fun any_to_bin_attrs/2)),
+    proper:quickcheck(Test, ?PQ_NUM(Num_Tests)).
+
+atom_to_any_attrs (Key, Val) -> {atom_to_list(Key),                             {value, byte_size(Val)}}.
+atom_to_bin_attrs (Key, Val) -> {list_to_binary(atom_to_list(Key)),             term_to_binary(Val)}.
+bin_to_atom_attrs (Key, Val) -> {list_to_atom(binary_to_list(Key) ++ "-atom"),  {value, binary_to_list(Val)}}.
+bin_to_any_attrs  (Key, Val) -> {binary_to_list(Key),                           binary_to_list(Val)}.
+any_to_atom_attrs (Key, Val) -> {list_to_atom(binary_to_list(Key) ++ "-atom"),  {value, Val}}.
+any_to_bin_attrs  (Key, Val) -> {term_to_binary({key, Key}),                    term_to_binary({value, Val})}.
+     
 
 xlate_attrs({Old_Dict_Type, Old_Keyval_Type, _} = Dict, New_Dict_Type, PD_Key, New_Keyval_Type, Attr_Fn) ->
     Exp_Size   = ?TM:size(Dict),
@@ -431,6 +460,16 @@ xlate_attrs({Old_Dict_Type, Old_Keyval_Type, _} = Dict, New_Dict_Type, PD_Key, N
               {pure_binary, any} ->
                   {
                     [{binary_to_list(Key), binary_to_list(Val)} || {Key, Val} <- Orig_Props],
+                    ?TM:xlate(Attr_Fn, Dict, New_Dict_Type, New_Keyval_Type)
+                  };
+              {any, atom_attrs} ->
+                  {
+                    [{list_to_atom(binary_to_list(Key) ++ "-atom"), {value, Val}} || {Key, Val} <- Orig_Props],
+                    ?TM:xlate(Attr_Fn, Dict, New_Dict_Type, New_Keyval_Type)
+                  };
+              {any, pure_binary} ->
+                  {
+                    [{term_to_binary({key, Key}), term_to_binary({value, Val})} || {Key, Val} <- Orig_Props],
                     ?TM:xlate(Attr_Fn, Dict, New_Dict_Type, New_Keyval_Type)
                   }
           end,
