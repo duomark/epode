@@ -12,19 +12,47 @@
 -module(epode_dict).
 -author('Jay Nelson <jay@duomark.com>').
 
-%% External interface
+%% External interface for epode_dict construction and identity
 -export([
          new/2,             % Construct a new empty epode_dict
          from_list/3,       % Construct a new epode_dict from an attribute list
-         to_list/1,         % Create a list of {Key, Val} from the dictionary
-         is_dict/1,         % Check if data is an epode_dict
+         to_list/1,         % Create a list of {Key, Val} from an epode_dict
+         is_dict/1          % Check if data is an epode_dict
+        ]).
+
+%% External interface for epode_dict attributes
+-export([
          size/1,            % Return the size of an epode_dict
-         map/3,             % Convert attribute values only
-         xlate/4            % Convert attributes and values
+         fetch/2,           % Fetch a single key's value from epode_dict or crash
+         fetch_keys/1,      % Fetch all the keys from an epode_dict
+         find/2,            % Fetch a single key's value from epode_dict or return error
+         is_key/2           % Test whether key exists in an epode_dict
+        ]).
+
+%% External interface for epode_dict mapping, translation and filtering
+-export([
+         map/3,             % Convert values only to make a new epode_dict
+         xlate/4,           % Convert keys and values to make a new epode_dict
+         filter/2           % Keep a subset of the keys and values in a new epode_dict
         ]).
 
 -include("../include/epode.hrl").
 
+-define(DICT_DISPATCH(__Fun_Name, __Dict),
+        case dict_type(__Dict) of
+            dict       -> dict    :__Fun_Name(bare_dict(Dict));
+            orddict    -> orddict :__Fun_Name(bare_dict(Dict));
+            vbisect    -> vbisect :__Fun_Name(bare_dict(Dict));
+            not_a_dict -> not_a_dict
+        end).
+
+-define(DICT_DISPATCH(__Fun_Name, __Key, __Dict),
+        case dict_type(__Dict) of
+            dict       -> dict    :__Fun_Name(__Key, bare_dict(__Dict));
+            orddict    -> orddict :__Fun_Name(__Key, bare_dict(__Dict));
+            vbisect    -> vbisect :__Fun_Name(__Key, bare_dict(__Dict));
+            not_a_dict -> not_a_dict
+        end).
 
 %%%------------------------------------------------------------------------------
 %% Construct and validate dictionary types
@@ -53,9 +81,9 @@
 -define(IS_VALID_KEYVAL(__Type), __Type =:= pure_binary; __Type =:= atom_attrs; __Type =:= any).
 
 %% vbisect is the only dictionary that is restricted with key value types.
-new(dict,    Keyval_Type) when ?IS_VALID_KEYVAL(Keyval_Type) -> {dict,    Keyval_Type, dict   :new()};
-new(orddict, Keyval_Type) when ?IS_VALID_KEYVAL(Keyval_Type) -> {orddict, Keyval_Type, orddict:new()};
-new(vbisect, pure_binary)                                    -> {vbisect, pure_binary, vbisect:from_orddict([])};
+new(dict,    Keyval_Type) when ?IS_VALID_KEYVAL(Keyval_Type) -> {dict,    Keyval_Type, dict    :new()};
+new(orddict, Keyval_Type) when ?IS_VALID_KEYVAL(Keyval_Type) -> {orddict, Keyval_Type, orddict :new()};
+new(vbisect, pure_binary)                                    -> {vbisect, pure_binary, vbisect :from_orddict([])};
 new(Dict,    Keyval_Type)                                    -> {error, {invalid_types, {Dict, Keyval_Type}}}.
 
 %% Construct a dictionary from a list of Attribute / Value pairs.
@@ -67,23 +95,17 @@ from_list(orddict, Keyval_Type,  Attrs) when ?IS_VALID_KEYVAL(Keyval_Type) -> {o
 from_list(vbisect, pure_binary,  Attrs)                                    -> {vbisect, pure_binary, vbisect:from_orddict (make_orddict(Attrs))};
 from_list(Dict,    Keyval_Type, _Attrs)                                    -> {error, {invalid_types, {Dict, Keyval_Type}}}.
 
-to_list(Dict) -> 
-    case dict_type(Dict) of
-        dict       -> dict:to_list    (bare_dict(Dict));
-        orddict    -> orddict:to_list (bare_dict(Dict));
-        vbisect    -> vbisect:to_list (bare_dict(Dict));
-        not_a_dict -> not_a_dict
-    end.
+to_list(Dict) -> ?DICT_DISPATCH(to_list, Dict).
 
 %% These functions enforce proplist style shadowing of values rather
 %% than using the built-in from_list where last clobbers earlier values.
 -define(MAKE_FOLD(__Otp_Dict_Type, __Attrs),
-    lists:foldl(fun({Key, Val}, Acc_Dict) ->
-                        case __Otp_Dict_Type:is_key(Key, Acc_Dict) of
-                            false -> __Otp_Dict_Type:store(Key, Val, Acc_Dict);
-                            true  -> Acc_Dict
-                        end
-                end, __Otp_Dict_Type:new(), __Attrs)).
+        lists:foldl(fun({Key, Val}, Acc_Dict) ->
+                            case __Otp_Dict_Type:is_key(Key, Acc_Dict) of
+                                false -> __Otp_Dict_Type:store(Key, Val, Acc_Dict);
+                                true  -> Acc_Dict
+                            end
+                    end, __Otp_Dict_Type:new(), __Attrs)).
 
 make_dict    (Attrs) -> ?MAKE_FOLD(dict,    Attrs).
 make_orddict (Attrs) -> ?MAKE_FOLD(orddict, Attrs).
@@ -108,13 +130,16 @@ valid_dict(Dict_Type, Bare_Dict) ->
         false -> not_a_dict
     end.
 
-bare_dict({_Dict_Type, _Keyval_Type, Bare_Dict}) -> Bare_Dict.
+%% These functions are used internally, after verifying dict_type/2 is valid.
+keyval_type ({_Dict_Type,  Keyval_Type, _Bare_Dict}) -> Keyval_Type.
+bare_dict   ({_Dict_Type, _Keyval_Type,  Bare_Dict}) -> Bare_Dict.
 
 
 %% OTP doesn't provide is_dict types, so this is a low-level hack for convenience.
 %% TODO: submit patches to vbisect and OTP to make is_dict/1 a standard API call.
-is_dict(dict,   Bare_Dict)
-  when element(1, Bare_Dict) =:= dict  -> true;    % close enough, doesn't check tuple size
+is_dict(dict,               Bare_Dict)
+  when is_tuple(Bare_Dict),
+       element(1, Bare_Dict) =:= dict  -> true;    % close enough, doesn't check tuple size
 is_dict(dict,             _Not_A_Dict) -> false;
 
 %% We can't scan the whole dictionary, or verify that it is sorted.
@@ -127,31 +152,15 @@ is_dict(vbisect,            Bare_Dict) -> vbisect:is_vbisect(Bare_Dict).
 
 
 %%%------------------------------------------------------------------------------
-%% API to access dictionary meta-attributes
-%%%------------------------------------------------------------------------------
-
--spec size(any()) -> non_neg_integer() | not_a_dict.
-
-size({_Dict_Type, Keyval_Type, Bare_Dict} = Dict)
-  when ?IS_VALID_KEYVAL(Keyval_Type) ->
-    size(dict_type(Dict), Bare_Dict);
-size(_) ->
-    not_a_dict.
-
-
-size(dict,        Bare_Dict) -> dict   :size(Bare_Dict);
-size(orddict,     Bare_Dict) -> orddict:size(Bare_Dict);
-size(vbisect,     Bare_Dict) -> vbisect:size(Bare_Dict);
-size(not_a_dict,  _Bad_Dict) -> not_a_dict.
-    
-
-%%%------------------------------------------------------------------------------
 %% API for converting attributes and values
 %%%------------------------------------------------------------------------------
 
+%% Filter removes attributes by visiting every element.
+-type filter_fn()   :: fun((Key::epode_attr(), Value::epode_value()) -> true | false).
+
 %% Mapping has the potential to change all values.
--type map_error() :: {error, {invalid_map_result, {any(), any()}}}.
--type map_fn()    :: fun((Key1::epode_attr(), Value1::epode_value())
+-type map_error()   :: {error, {invalid_map_result, {any(), any()}}}.
+-type map_fn()      :: fun((Key1::epode_attr(), Value1::epode_value())
                          -> Value2::epode_value()).
 
 %% Translation has the potential to change all keys and values.
@@ -159,17 +168,18 @@ size(not_a_dict,  _Bad_Dict) -> not_a_dict.
 -type xlate_fn()    :: fun((Key1::epode_attr(), Value1::epode_value())
                            -> {Key2::epode_attr(), Value2::epode_value()} | undefined).
 
--spec map       (map_fn(),   epode_dict(), epode_all_dict_type())                        -> epode_dict() | not_a_dicto | map_error().
--spec xlate     (xlate_fn(), epode_dict(), epode_all_dict_type(), epode_all_dict_type()) -> epode_dict() | not_a_dict | xlate_error().
+-spec filter    (filter_fn(), epode_dict())                                               -> epode_dict() | not_a_dict.
+-spec map       (map_fn(),    epode_dict(), epode_all_dict_type())                        -> epode_dict() | not_a_dict | map_error().
+-spec xlate     (xlate_fn(),  epode_dict(), epode_all_dict_type(), epode_all_dict_type()) -> epode_dict() | not_a_dict | xlate_error().
              
 %% Convert just the values (keeping the old attributes) to generate a new dictionary of the same style.
 map(User_Map_Fn, Dict, New_Keyval_Type) when ?IS_VALID_KEYVAL(New_Keyval_Type) ->
     Map_Fn = possibly_wrap_map_fn(User_Map_Fn, New_Keyval_Type),
     case {dict_type(Dict), New_Keyval_Type} of
         {not_a_dict,              _} -> not_a_dict;
-        {dict,                    _} -> {dict,    New_Keyval_Type, dict   :map(Map_Fn, bare_dict(Dict))};
-        {orddict,                 _} -> {orddict, New_Keyval_Type, orddict:map(Map_Fn, bare_dict(Dict))};
-        {vbisect,       pure_binary} -> {vbisect, New_Keyval_Type, vbisect:map(Map_Fn, bare_dict(Dict))};
+        {dict,                    _} -> {dict,    New_Keyval_Type, dict    :map(Map_Fn, bare_dict(Dict))};
+        {orddict,                 _} -> {orddict, New_Keyval_Type, orddict :map(Map_Fn, bare_dict(Dict))};
+        {vbisect,       pure_binary} -> {vbisect, New_Keyval_Type, vbisect :map(Map_Fn, bare_dict(Dict))};
         {Dict_Type, New_Keyval_Type} -> {error, {invalid_map_result, {Dict_Type, New_Keyval_Type}}}
     end;
 map(_Map_Fn, Dict,  New_Keyval_Type) -> {error, {invalid_map_result, {dict_type(Dict), New_Keyval_Type}}}.
@@ -234,7 +244,39 @@ xlate_attrs(Xlate_Fn, New_Keyval_Type, Keyval_Pairs) ->
                         end
                 end, [], Keyval_Pairs).
 
+filter(Filter_Fn, Dict) ->
+    case dict_type(Dict) of
+        not_a_dict -> not_a_dict;
+        Dict_Type  -> xlate_valid(Dict_Type, Dict_Type, keyval_type(Dict),
+                                  fun(Key, Val) ->
+                                          case Filter_Fn(Key, Val) of
+                                              true  -> {Key, Val};
+                                              false -> undefined
+                                          end
+                                  end, bare_dict(Dict))
+    end.
+
 
 %%%------------------------------------------------------------------------------
 %% API to access dictionary properties...
 %%%------------------------------------------------------------------------------
+
+-spec size(any()) -> non_neg_integer() | not_a_dict.
+
+-spec fetch_keys(epode_bdict()) -> [binary()];
+                (epode_edict()) -> [atom() | any()].
+
+-spec find(binary(), epode_bdict()) -> {ok, binary()} | error;
+          (any(),    epode_edict()) -> {ok, any()}    | error.
+
+-spec fetch(binary(), epode_bdict()) -> binary() | no_return;
+           (any(),    epode_edict()) -> any()    | no_return.
+
+-spec is_key(any(), epode_dict()) -> boolean() | not_a_dict.
+
+size       (Dict)  -> ?DICT_DISPATCH(size,       Dict).
+fetch_keys (Dict)  -> ?DICT_DISPATCH(fetch_keys, Dict).
+
+find   (Key, Dict) -> ?DICT_DISPATCH(find,   Key, Dict).
+fetch  (Key, Dict) -> ?DICT_DISPATCH(fetch,  Key, Dict).
+is_key (Key, Dict) -> ?DICT_DISPATCH(is_key, Key, Dict).

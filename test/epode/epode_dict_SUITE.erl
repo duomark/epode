@@ -150,10 +150,10 @@ check_invalid_keyval(_Config) ->
     {error, {invalid_xlate_result, {vbisect, vbisect, atom_attrs}}} = ?TM:xlate (fun xlate_fn/2, ?VBISECT_DICT, vbisect, atom_attrs),
 
     ct:log("Crash epode_dict:map/2 and xlate/3 function calls with invalid dict internal types"),
-    crash = ?CASE_CLAUSE_CRASH   ( ?TM:map   (fun map_fn/2,   ?DICT_BAD_DICT,    pure_binary) ),
-    crash = ?CASE_CLAUSE_CRASH   ( ?TM:map   (fun map_fn/2,   ?ORDDICT_BAD_DICT, pure_binary) ),
-    crash = ?CASE_CLAUSE_CRASH   ( ?TM:xlate (fun xlate_fn/2, ?DICT_BAD_DICT,    dict,    pure_binary) ),
-    crash = ?CASE_CLAUSE_CRASH   ( ?TM:xlate (fun xlate_fn/2, ?ORDDICT_BAD_DICT, orddict, pure_binary) ),
+    crash = ?CASE_CLAUSE_CRASH ( ?TM:map   (fun map_fn/2,   ?DICT_BAD_DICT,    pure_binary) ),
+    crash = ?CASE_CLAUSE_CRASH ( ?TM:map   (fun map_fn/2,   ?ORDDICT_BAD_DICT, pure_binary) ),
+    crash = ?CASE_CLAUSE_CRASH ( ?TM:xlate (fun xlate_fn/2, ?DICT_BAD_DICT,    dict,    pure_binary) ),
+    crash = ?CASE_CLAUSE_CRASH ( ?TM:xlate (fun xlate_fn/2, ?ORDDICT_BAD_DICT, orddict, pure_binary) ),
 
     not_a_dict = ?TM:map   (fun map_fn/2,   ?VBISECT_BAD_DICT, pure_binary),
     not_a_dict = ?TM:xlate (fun xlate_fn/2, ?VBISECT_BAD_DICT, dict,    pure_binary),
@@ -196,6 +196,7 @@ any_constructor(PD_Key, Num_Tests) ->
                    valid_empty_dict(Dict_Type, ?TM:new(Dict_Type, any), PD_Key)),
     proper:quickcheck(Test, ?PQ_NUM(Num_Tests)).
 
+%% Actual property test
 valid_empty_dict(Dict_Type, Dict, PD_Key) ->
     true = ?TM:is_dict (Dict),
     0    = ?TM:size    (Dict),
@@ -252,6 +253,7 @@ make_orddict(Attrs) ->
                         end
                 end, orddict:new(), Attrs).
 
+%% Actual property test
 valid_starting_dict(Dict_Type, Dict, PD_Key, Orig_Props) ->
     Unshadowed_Props = make_orddict(Orig_Props),
     Exp_Size = orddict:size(Unshadowed_Props),
@@ -264,23 +266,15 @@ valid_starting_dict(Dict_Type, Dict, PD_Key, Orig_Props) ->
     put(PD_Key, orddict:update_counter(Dict_Type, 1, get(PD_Key))),
     true.
 
-elem_size( Item) when is_list(Item)   -> length(Item);
-elem_size( Item) when is_binary(Item) -> byte_size(Item);
-elem_size( Item) when is_atom(Item)   -> length(atom_to_list(Item));
-elem_size(_Item)                      -> -1.
-
 
 %%%------------------------------------------------------------------------------
-%%% Property:   New Dictionary from list of data
-%%% Validation: Type matches request, and elements exist in new dictionary.
+%%% Property:   Map only the values of a dictionary to new values
+%%% Validation: New dictionary of same size, with same attributes, new values
 %%%------------------------------------------------------------------------------
 
 -spec check_pure_binary_map_fn (config()) -> ok.
 -spec check_atom_map_fn        (config()) -> ok.
 -spec check_any_map_fn         (config()) -> ok.
-
--spec check_bin_xlate_fn       (config()) -> ok.
--spec check_atom_xlate_fn      (config()) -> ok.
 
 check_pure_binary_map_fn(_Config) ->
     Log_Stmt = "Test mapping values to a new dictionary (~p tests)",
@@ -312,13 +306,16 @@ map_any(PD_Key, Num_Tests) ->
                    map_dup(Dict_Type, ?TM:from_list(Dict_Type, any, Attr_List), PD_Key, any)),
     proper:quickcheck(Test, ?PQ_NUM(Num_Tests)).
 
+%% Map function to get at most 1st 3 bytes of a binary.
 trunc_binary(_Key, <<Val:3/binary, _Rest/binary>>) -> Val;
 trunc_binary(_Key, <<Val/binary>>)                 -> Val;
 trunc_binary(_Key, <<>>)                           -> <<>>.
 
+%% Map function to get just the value of a Key/Value pair.
 dup_any(_Key, Val) -> {Val, Val}.
     
 
+%% Actual property test
 map_dict(Dict_Type, Dict, PD_Key) ->
     Exp_Size   = ?TM:size(Dict),
     Orig_Props = lists:sort(?TM:to_list(Dict)),
@@ -338,6 +335,7 @@ map_dict(Dict_Type, Dict, PD_Key) ->
     put(PD_Key, orddict:update_counter(Dict_Type, 1, get(PD_Key))),
     true.
 
+%% Actual property test
 map_dup(Dict_Type, Dict, PD_Key, New_Keyval_Type) ->
     Exp_Size   = ?TM:size(Dict),
     Orig_Props = lists:sort(?TM:to_list(Dict)),
@@ -354,6 +352,15 @@ map_dup(Dict_Type, Dict, PD_Key, New_Keyval_Type) ->
     put(PD_Key, orddict:update_counter(Dict_Type, 1, get(PD_Key))),
     true.
     
+
+%%%------------------------------------------------------------------------------
+%%% Property:   Translate attibutes and values of an existing dictionary.
+%%% Validation: New dictionary of same size, with new attributes and values
+%%%------------------------------------------------------------------------------
+
+-spec check_bin_xlate_fn  (config()) -> ok.
+-spec check_atom_xlate_fn (config()) -> ok.
+-spec check_any_xlate_fn  (config()) -> ok.
 
 check_bin_xlate_fn(_Config) ->
     Log_Stmt_1 = "Test translating bin keys and values to a new atomkey dictionary (~p tests)",
@@ -429,6 +436,7 @@ xlate_any_to_bin(PD_Key, Num_Tests) ->
                                New_Dict_Type, PD_Key, New_Keyval_Type, fun any_to_bin_attrs/2)),
     proper:quickcheck(Test, ?PQ_NUM(Num_Tests)).
 
+%% Sample conversion functions
 atom_to_any_attrs (Key, Val) -> {atom_to_list(Key),                             {value, byte_size(Val)}}.
 atom_to_bin_attrs (Key, Val) -> {list_to_binary(atom_to_list(Key)),             term_to_binary(Val)}.
 bin_to_atom_attrs (Key, Val) -> {list_to_atom(binary_to_list(Key) ++ "-atom"),  {value, binary_to_list(Val)}}.
@@ -436,7 +444,7 @@ bin_to_any_attrs  (Key, Val) -> {binary_to_list(Key),                           
 any_to_atom_attrs (Key, Val) -> {list_to_atom(binary_to_list(Key) ++ "-atom"),  {value, Val}}.
 any_to_bin_attrs  (Key, Val) -> {term_to_binary({key, Key}),                    term_to_binary({value, Val})}.
      
-
+%% Actual property test
 xlate_attrs({Old_Dict_Type, Old_Keyval_Type, _} = Dict, New_Dict_Type, PD_Key, New_Keyval_Type, Attr_Fn) ->
     Exp_Size   = ?TM:size(Dict),
     Orig_Props = lists:sort(?TM:to_list(Dict)),
@@ -489,6 +497,11 @@ xlate_attrs({Old_Dict_Type, Old_Keyval_Type, _} = Dict, New_Dict_Type, PD_Key, N
 %%%------------------------------------------------------------------------------
 %%% Logging functions
 %%%------------------------------------------------------------------------------
+
+elem_size( Item) when is_list(Item)   -> length(Item);
+elem_size( Item) when is_binary(Item) -> byte_size(Item);
+elem_size( Item) when is_atom(Item)   -> length(atom_to_list(Item));
+elem_size(_Item)                      -> -1.
 
 log_from_list_case(Old_Or_New, 0, 0, []) ->
     ct:log("~p Num_Attrs: 0  Key_Size_Range: {0, 0}  Val_Size_Range {0, 0}~n", [Old_Or_New]);
