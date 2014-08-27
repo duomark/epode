@@ -206,7 +206,7 @@ valid_empty_dict(Dict_Type, Dict, PD_Key) ->
 
 %%%------------------------------------------------------------------------------
 %%% Property:   New Dictionary from list of data
-%%% Validation: Type matches request, and elements exist in new dictionary.
+%%% Validation: Type matches request, elements exist in new dictionary.
 %%%------------------------------------------------------------------------------
 
 -spec check_pure_binary_from_list (config()) -> ok.
@@ -256,11 +256,25 @@ make_orddict(Attrs) ->
 %% Actual property test
 valid_starting_dict(Dict_Type, Dict, PD_Key, Orig_Props) ->
     Unshadowed_Props = make_orddict(Orig_Props),
+    Sorted_Keys      = [K || {K, _V} <- Unshadowed_Props],
+    Key_Sorted_Vals  = [V || {_K, V} <- Unshadowed_Props],
+
     Exp_Size = orddict:size(Unshadowed_Props),
     log_from_list_case(old, length(Orig_Props), Exp_Size, orddict:to_list(Unshadowed_Props)),
     true     = ?TM:is_dict(Dict),
     Exp_Size = ?TM:size(Dict),
     Unshadowed_Props = lists:sort(?TM:to_list(Dict)),
+
+    %% Dictionary attribute tests
+    Keys_In_Dict = ?TM:fetch_keys(Dict),
+    Vals_In_Dict = [?TM:fetch(K, Dict) || K <- Keys_In_Dict],
+    Vals_In_Dict = [begin {ok, V} = ?TM:find(K, Dict), V end || K <- Keys_In_Dict],
+    Vals_In_Dict = ?TM:values(Dict),
+
+    Sorted_Keys     = lists:sort(Keys_In_Dict),
+    Key_Sorted_Vals = [?TM:fetch(K, Dict) || K <- Sorted_Keys],
+    Key_Sorted_Vals = [begin {ok, V} = ?TM:find(K, Dict), V end || K <- Sorted_Keys],
+    true            = lists:all(fun(K) -> ?TM:is_key(K, Dict) end, Sorted_Keys),
     
     %% Report the number of tests run for each Dict_Type.
     put(PD_Key, orddict:update_counter(Dict_Type, 1, get(PD_Key))),

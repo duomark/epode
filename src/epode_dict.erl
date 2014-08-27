@@ -24,14 +24,16 @@
 -export([
          size/1,            % Return the size of an epode_dict
          fetch/2,           % Fetch a single key's value from epode_dict or crash
-         fetch_keys/1,      % Fetch all the keys from an epode_dict
+         fetch_keys/1,      % Fetch all the keys from an epode_dict (in same order as values/1)
          find/2,            % Fetch a single key's value from epode_dict or return error
-         is_key/2           % Test whether key exists in an epode_dict
+         is_key/2,          % Test whether key exists in an epode_dict
+         values/1           % Fetch all the values from an epode_dict (in same order as fetch_keys/1)
         ]).
 
 %% External interface for epode_dict mapping, translation and filtering
 -export([
          map/3,             % Convert values only to make a new epode_dict
+         fold/3,            % Fold across keys and values to generate an arbitrary result
          xlate/4,           % Convert keys and values to make a new epode_dict
          filter/2           % Keep a subset of the keys and values in a new epode_dict
         ]).
@@ -168,9 +170,13 @@ is_dict(vbisect,            Bare_Dict) -> vbisect:is_vbisect(Bare_Dict).
 -type xlate_fn()    :: fun((Key1::epode_attr(), Value1::epode_value())
                            -> {Key2::epode_attr(), Value2::epode_value()} | undefined).
 
+%% Fold visits all key and value pairs.
+-type fold_error()  :: {error, {invalid_fold_result, any()}}.
+
 -spec filter    (filter_fn(), epode_dict())                                               -> epode_dict() | not_a_dict.
 -spec map       (map_fn(),    epode_dict(), epode_all_dict_type())                        -> epode_dict() | not_a_dict | map_error().
 -spec xlate     (xlate_fn(),  epode_dict(), epode_all_dict_type(), epode_all_dict_type()) -> epode_dict() | not_a_dict | xlate_error().
+-spec fold      (fun(),       Acc1::any(),  epode_dict())                                 -> Acc2::any    | not_a_dict | fold_error().
              
 %% Convert just the values (keeping the old attributes) to generate a new dictionary of the same style.
 map(User_Map_Fn, Dict, New_Keyval_Type) when ?IS_VALID_KEYVAL(New_Keyval_Type) ->
@@ -184,7 +190,6 @@ map(User_Map_Fn, Dict, New_Keyval_Type) when ?IS_VALID_KEYVAL(New_Keyval_Type) -
     end;
 map(_Map_Fn, Dict,  New_Keyval_Type) -> {error, {invalid_map_result, {dict_type(Dict), New_Keyval_Type}}}.
 
-
 possibly_wrap_map_fn(Map_Fn, pure_binary) -> map_to_pure_binary_fn(Map_Fn);
 possibly_wrap_map_fn(Map_Fn, _Not_Binary) -> Map_Fn.
 
@@ -193,6 +198,15 @@ map_to_pure_binary_fn(User_Fn) ->
             case User_Fn(Key, Val) of
                 New_Value when is_binary(New_Value) -> New_Value
             end
+    end.
+
+%% Fold across the keyval pairs.
+fold(Fun, Acc0, Dict) ->
+    case dict_type(Dict) of
+        not_a_dict -> not_a_dict;
+        dict       -> dict    :fold(Fun, Acc0, bare_dict(Dict));
+        orddict    -> orddict :fold(Fun, Acc0, bare_dict(Dict));
+        vbisect    -> vbisect :fold(Fun, Acc0, bare_dict(Dict))
     end.
 
 
@@ -274,8 +288,18 @@ filter(Filter_Fn, Dict) ->
 
 -spec is_key(any(), epode_dict()) -> boolean() | not_a_dict.
 
+-spec values(epode_bdict()) -> [binary()];
+            (epode_edict()) -> [any()].
+
 size       (Dict)  -> ?DICT_DISPATCH(size,       Dict).
 fetch_keys (Dict)  -> ?DICT_DISPATCH(fetch_keys, Dict).
+values     (Dict)  ->
+    case dict_type(Dict) of
+        dict       -> BD = bare_dict(Dict), Keys = dict    :fetch_keys(BD), [dict    :fetch(Key, BD) || Key <- Keys];
+        orddict    -> BD = bare_dict(Dict), Keys = orddict :fetch_keys(BD), [orddict :fetch(Key, BD) || Key <- Keys];
+        vbisect    -> BD = bare_dict(Dict), vbisect:values(BD);
+        not_a_dict -> not_a_dict
+    end.                              
 
 find   (Key, Dict) -> ?DICT_DISPATCH(find,   Key, Dict).
 fetch  (Key, Dict) -> ?DICT_DISPATCH(fetch,  Key, Dict).
