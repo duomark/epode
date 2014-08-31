@@ -25,7 +25,8 @@
          check_pure_binary_from_list/1, check_atom_from_list/1, check_any_from_list/1,
          check_pure_binary_map_fn/1,    check_atom_map_fn/1,    check_any_map_fn/1,
          check_bin_xlate_fn/1,          check_atom_xlate_fn/1,  check_any_xlate_fn/1,
-         check_bin_fold_fn/1,           check_atom_fold_fn/1,   check_any_fold_fn/1
+         check_bin_fold_fn/1,           check_atom_fold_fn/1,   check_any_fold_fn/1,
+         check_bin_filter_fn/1,         check_atom_filter_fn/1, check_any_filter_fn/1
         ]).
 
 -include("../epode_common_test.hrl").
@@ -42,7 +43,7 @@ groups() -> [
                                         ]},
              {translation,  [sequence], [
                                          {group, map_fn},    {group, xlate_fn},
-                                         {group, fold_fn}
+                                         {group, fold_fn},   {group, filter_fn}
                                         ]},
 
              %% Supporting groups...
@@ -50,7 +51,8 @@ groups() -> [
              {from_list,    [sequence], [check_pure_binary_from_list, check_atom_from_list, check_any_from_list]},
              {map_fn,       [sequence], [check_pure_binary_map_fn,    check_atom_map_fn,    check_any_map_fn]},
              {xlate_fn,     [sequence], [check_bin_xlate_fn,          check_atom_xlate_fn,  check_any_xlate_fn]},
-             {fold_fn,      [sequence], [check_bin_fold_fn,           check_atom_fold_fn,   check_any_fold_fn]}
+             {fold_fn,      [sequence], [check_bin_fold_fn,           check_atom_fold_fn,   check_any_fold_fn]},
+             {filter_fn,    [sequence], [check_bin_filter_fn,         check_atom_filter_fn, check_any_filter_fn]}
             ].
 
 init_per_suite(Config) -> Config.
@@ -390,7 +392,7 @@ check_atom_xlate_fn(_Config) ->
     Log_Stmt_1 = "Test translating atom keys and values to a new binary dictionary (~p tests)",
     true = epode_common_test:test_count_wrapper(Log_Stmt_1, ct_check_map, fun xlate_atoms_to_bin/2, 100),
     Log_Stmt_2 = "Test translating atom keys and values to a new any dictionary (~p tests)",
-    true = epode_common_test:test_count_wrapper(Log_Stmt_2, ct_check_map, fun xlate_atoms_to_bin/2, 100),
+    true = epode_common_test:test_count_wrapper(Log_Stmt_2, ct_check_map, fun xlate_atoms_to_any/2, 100),
     ok.
 
 check_any_xlate_fn(_Config) ->
@@ -429,6 +431,15 @@ xlate_atoms_to_bin(PD_Key, Num_Tests) ->
 
                    xlate_attrs(?TM:from_list(Dict_Type, atom_attrs, Attr_List),
                                New_Dict_Type, PD_Key, New_Keyval_Type, fun atom_to_bin_attrs/2)),
+    proper:quickcheck(Test, ?PQ_NUM(Num_Tests)).
+
+xlate_atoms_to_any(PD_Key, Num_Tests) ->
+    Test = ?FORALL({Dict_Type, Attr_List, New_Dict_Type, New_Keyval_Type},
+                   {epode_atom_dict_type(), list({atom(), binary()}),
+                    epode_any_dict_type(), epode_keyval_any_type()},
+
+                   xlate_attrs(?TM:from_list(Dict_Type, atom_attrs, Attr_List),
+                               New_Dict_Type, PD_Key, New_Keyval_Type, fun atom_to_any_attrs/2)),
     proper:quickcheck(Test, ?PQ_NUM(Num_Tests)).
 
 xlate_any_to_atoms(PD_Key, Num_Tests) ->
@@ -475,7 +486,7 @@ xlate_attrs({Old_Dict_Type, Old_Keyval_Type, _} = Dict, New_Dict_Type, PD_Key, N
               {atom_attrs, any} ->
                   {
                     [{atom_to_list(Key), {value, byte_size(Val)}} || {Key, Val} <- Orig_Props],
-                    ?TM:xlate(fun bin_to_any_attrs/2, Dict, New_Dict_Type, New_Keyval_Type)
+                    ?TM:xlate(fun atom_to_any_attrs/2, Dict, New_Dict_Type, New_Keyval_Type)
                   };
               {pure_binary, atom_attrs} ->
                   {
@@ -583,13 +594,74 @@ fold_any(PD_Key, Num_Tests) ->
     Test = ?FORALL({Dict_Type, Attr_List}, {epode_any_dict_type(), list({non_empty(any()), binary()})},
                    begin
                        Valid_Attrs    = [{K,V} || {K,V} <- Attr_List, K =/= ''],
-                       Unique_Attrs   = orddict:to_list(orddict:from_list(Attr_List)),
+                       Unique_Attrs   = orddict:to_list(orddict:from_list(Valid_Attrs)),
                        Filtered_Attrs = Attr_List -- (Attr_List -- Unique_Attrs),
                        fold_atom_result(Dict_Type, Filtered_Attrs, PD_Key)
                    end),
     proper:quickcheck(Test, ?PQ_NUM(Num_Tests)).
+    
 
+%%%------------------------------------------------------------------------------
+%%% Property:   Filter attibutes and values of an existing dictionary.
+%%% Validation: New dict with only matching attributes kept
+%%%------------------------------------------------------------------------------
 
+-spec check_bin_filter_fn  (config()) -> ok.
+-spec check_atom_filter_fn (config()) -> ok.
+-spec check_any_filter_fn  (config()) -> ok.
+
+check_bin_filter_fn(_Config) ->
+    Log_Stmt_1 = "Test filtering bin keys and values (~p tests)",
+    true = epode_common_test:test_count_wrapper(Log_Stmt_1, ct_check_map, fun filter_binaries/2, 100),
+    ok.
+
+check_atom_filter_fn(_Config) ->
+    Log_Stmt_1 = "Test filtering atom keys and binary values (~p tests)",
+    true = epode_common_test:test_count_wrapper(Log_Stmt_1, ct_check_map, fun filter_atoms/2, 100),
+    ok.
+
+check_any_filter_fn(_Config) ->
+    Log_Stmt_1 = "Test filtering atom keys and binary values (~p tests)",
+    true = epode_common_test:test_count_wrapper(Log_Stmt_1, ct_check_map, fun filter_any/2, 100),
+    ok.
+
+filter_binaries(PD_Key, Num_Tests) ->
+    Test = ?FORALL({Dict_Type, Attr_List}, {epode_bdict_type(), list({non_empty(binary()), binary()})},
+                   filter_result(Dict_Type, pure_binary, Attr_List, PD_Key)),
+    proper:quickcheck(Test, ?PQ_NUM(Num_Tests)).
+
+filter_result(Dict_Type, Attr_Type, Attr_List, PD_Key) ->
+    Dict = ?TM:from_list(Dict_Type, Attr_Type, Attr_List),
+    New_Dict = ?TM:filter(fun(K,_V)  when is_binary(K), byte_size(K) < 5 -> true;
+                             (K,_V)  when is_binary(K)                   -> false;
+                             (_K,V)  when is_binary(V), byte_size(V) < 7 -> true;
+                             (_K,_V)                                     -> false
+                          end, Dict),
+    Keep_Attrs = [{K,V}|| {K,V} <- ?TM:to_list(Dict),
+                          case K of
+                              K when is_binary(K) -> byte_size(K) < 5;
+                              K                   -> byte_size(V) < 7
+                          end],
+
+    Exp_Num_Attrs = length(Keep_Attrs),
+    Exp_Num_Attrs = ?TM:size(New_Dict),
+    Sorted_Keep   = orddict:to_list(orddict:from_list(Keep_Attrs)),
+    Sorted_New    = orddict:to_list(orddict:from_list(?TM:to_list(New_Dict))),
+    Sorted_Keep   = Sorted_New,
+
+    %% Report the number of tests run for each Dict_Type.
+    put(PD_Key, orddict:update_counter(Dict_Type, 1, get(PD_Key))),
+    true.
+
+filter_atoms(PD_Key, Num_Tests) ->
+    Test = ?FORALL({Dict_Type, Attr_List}, {epode_atom_dict_type(), list({atom(), binary()})},
+                   filter_result(Dict_Type, atom_attrs, [{K,V} || {K,V} <- Attr_List, K =/= ''], PD_Key)),
+    proper:quickcheck(Test, ?PQ_NUM(Num_Tests)).
+
+filter_any(PD_Key, Num_Tests) ->
+    Test = ?FORALL({Dict_Type, Attr_List}, {epode_any_dict_type(), list({non_empty(any()), binary()})},
+                   filter_result(Dict_Type, any, [{K,V} || {K,V} <- Attr_List, K =/= ''], PD_Key)),
+    proper:quickcheck(Test, ?PQ_NUM(Num_Tests)).
 
 
 %%%------------------------------------------------------------------------------
