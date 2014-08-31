@@ -172,11 +172,13 @@ is_dict(vbisect,            Bare_Dict) -> vbisect:is_vbisect(Bare_Dict).
 
 %% Fold visits all key and value pairs.
 -type fold_error()  :: {error, {invalid_fold_result, any()}}.
+-type fold_fn()     :: fun((Key::epode_attr(), Value::epode_value(), AccIn::any())
+                           -> AcctOut::any()).
 
 -spec filter    (filter_fn(), epode_dict())                                               -> epode_dict() | not_a_dict.
 -spec map       (map_fn(),    epode_dict(), epode_all_dict_type())                        -> epode_dict() | not_a_dict | map_error().
 -spec xlate     (xlate_fn(),  epode_dict(), epode_all_dict_type(), epode_all_dict_type()) -> epode_dict() | not_a_dict | xlate_error().
--spec fold      (fun(),       Acc1::any(),  epode_dict())                                 -> Acc2::any    | not_a_dict | fold_error().
+-spec fold      (fold_fn(),   AccIn::any(),  epode_dict())                                -> AccOut::any  | not_a_dict | fold_error().
              
 %% Convert just the values (keeping the old attributes) to generate a new dictionary of the same style.
 map(User_Map_Fn, Dict, New_Keyval_Type) when ?IS_VALID_KEYVAL(New_Keyval_Type) ->
@@ -204,9 +206,9 @@ map_to_pure_binary_fn(User_Fn) ->
 fold(Fun, Acc0, Dict) ->
     case dict_type(Dict) of
         not_a_dict -> not_a_dict;
-        dict       -> dict    :fold(Fun, Acc0, bare_dict(Dict));
-        orddict    -> orddict :fold(Fun, Acc0, bare_dict(Dict));
-        vbisect    -> vbisect :fold(Fun, Acc0, bare_dict(Dict))
+        dict       -> dict    :fold  (Fun, Acc0, bare_dict(Dict));
+        orddict    -> orddict :fold  (Fun, Acc0, bare_dict(Dict));
+        vbisect    -> vbisect :foldl (Fun, Acc0, bare_dict(Dict))
     end.
 
 
