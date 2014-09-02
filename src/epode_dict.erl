@@ -34,6 +34,7 @@
 -export([
          map/3,             % Convert values only to make a new epode_dict
          fold/3,            % Fold across keys and values to generate an arbitrary result
+         merge/3,           % Merge two epode_dict of the same type to make a new epode_dict of like type
          xlate/4,           % Convert keys and values to make a new epode_dict
          filter/2           % Keep a subset of the keys and values in a new epode_dict
         ]).
@@ -318,9 +319,22 @@ filter(Filter_Fn, Dict) ->
 -spec values(epode_bdict()) -> [binary()];
             (epode_edict()) -> [any()].
 
-size       (Dict)  -> ?DICT_DISPATCH(size,       Dict).
-fetch_keys (Dict)  -> ?DICT_DISPATCH(fetch_keys, Dict).
-values     (Dict)  ->
+-type merge_pure_binary_fun() :: fun((Key::binary(), Value1::binary(), Value2::binary()) -> Value::binary()).
+-type merge_atom_attrs_fun()  :: fun((Key::atom(),   Value1::any(),    Value2::any())    -> Value::any()).
+-type merge_any_fun()         :: fun((Key::any(),    Value1::any(),    Value2::any())    -> Value::any()).
+-spec merge(merge_pure_binary_fun(),                   Epode1::epode_bdict(), Epode2::epode_bdict) -> Epode::epode_bdict();
+           (merge_atom_attrs_fun() | merge_any_fun(),  Epode1::epode_edict(), Epode2::epode_edict) -> Epode::epode_edict();
+           (merge_atom_attrs_fun() | merge_any_fun(),  Epode1::epode_bdict(), Epode2::epode_edict) -> not_a_dict;
+           (merge_atom_attrs_fun() | merge_any_fun(),  Epode1::epode_edict(), Epode2::epode_bdict) -> not_a_dict.
+
+size        (Dict) -> ?DICT_DISPATCH(size,        Dict).
+fetch_keys  (Dict) -> ?DICT_DISPATCH(fetch_keys,  Dict).
+
+find   (Key, Dict) -> ?DICT_DISPATCH(find,   Key, Dict).
+fetch  (Key, Dict) -> ?DICT_DISPATCH(fetch,  Key, Dict).
+is_key (Key, Dict) -> ?DICT_DISPATCH(is_key, Key, Dict).
+
+values (Dict)  ->
     case dict_type(Dict) of
         dict       -> BD = bare_dict(Dict), Keys = dict    :fetch_keys(BD), [dict    :fetch(Key, BD) || Key <- Keys];
         orddict    -> BD = bare_dict(Dict), Keys = orddict :fetch_keys(BD), [orddict :fetch(Key, BD) || Key <- Keys];
@@ -328,6 +342,12 @@ values     (Dict)  ->
         not_a_dict -> not_a_dict
     end.                              
 
-find   (Key, Dict) -> ?DICT_DISPATCH(find,   Key, Dict).
-fetch  (Key, Dict) -> ?DICT_DISPATCH(fetch,  Key, Dict).
-is_key (Key, Dict) -> ?DICT_DISPATCH(is_key, Key, Dict).
+merge  (Merge_Fun, Epode1, Epode2) ->
+    case {dict_type(Epode1), dict_type(Epode2)} of
+        {dict,    dict}    -> {dict,    keyval_type(Epode1), dict    :merge(Merge_Fun, bare_dict(Epode1), bare_dict(Epode2))};
+        {orddict, orddict} -> {orddict, keyval_type(Epode1), orddict :merge(Merge_Fun, bare_dict(Epode1), bare_dict(Epode2))};
+        {vbisect, vbisect} -> {vbisect, keyval_type(Epode1), vbisect :merge(Merge_Fun, bare_dict(Epode1), bare_dict(Epode2))};
+        {not_a_dict, _}    -> not_a_dict;
+        {_, not_a_dict}    -> not_a_dict;
+        _Mismatched_Types  -> not_a_dict
+    end.
