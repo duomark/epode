@@ -67,19 +67,17 @@
 -type any_dict_list()    :: dict_list(any(),    any()).
 -type dict_type_error()  :: {error, {invalid_types, {any(), any()}}}.
 
--spec new       (epode_bdict_type(), epode_keyval_binary_type() ) -> epode_bin_dict()  | dict_type_error();
-                (epode_edict_type(), epode_keyval_atom_type()   ) -> epode_atom_dict() | dict_type_error();
-                (epode_edict_type(), epode_keyval_any_type()    ) -> epode_any_dict()  | dict_type_error().
+-spec new (epode_bdict_type(), epode_keyval_binary_type())     -> epode_bdict();
+          (epode_edict_type(), epode_keyval_non_binary_type()) -> epode_edict().
 
--spec from_list (epode_bdict_type(),     epode_keyval_binary_type(), binary_dict_list() ) -> epode_bin_dict()  | dict_type_error();
-                (epode_atom_dict_type(), epode_keyval_atom_type(),   atom_dict_list()   ) -> epode_atom_dict() | dict_type_error();
-                (epode_any_dict_type(),  epode_keyval_any_type(),    any_dict_list()    ) -> epode_any_dict()  | dict_type_error().
+-spec from_list (epode_bdict_type(),     epode_keyval_binary_type(),     binary_dict_list()) -> epode_bdict();
+                (epode_atom_dict_type(), epode_keyval_atom_type(),       atom_dict_list())   -> epode_atom_dict();
+                (epode_any_dict_type(),  epode_keyval_any_type(),        any_dict_list())    -> epode_any_dict().
 
--spec to_list   (epode_bin_dict())  -> binary_dict_list();
-                %% If overloaded types allowed: (epode_atom_dict()) -> atom_dict_list();
-                (epode_any_dict())  -> any_dict_list().
+-spec to_list (epode_bdict()) -> binary_dict_list();
+              (epode_edict()) -> any_dict_list().
 
--spec is_dict   (any()) -> boolean().
+-spec is_dict (any()) -> boolean().
 
 -define(IS_VALID_KEYVAL(__Type), __Type =:= pure_binary; __Type =:= atom_attrs; __Type =:= any).
 
@@ -159,29 +157,46 @@ is_dict(vbisect,            Bare_Dict) -> vbisect:is_vbisect(Bare_Dict).
 %%%------------------------------------------------------------------------------
 
 %% Filter removes attributes by visiting every element.
--type filter_fn()   :: fun((Key::epode_attr(), Value::epode_value()) -> true | false).
+-type filter_fun()  :: fun((Key::epode_attr(), Value::epode_value()) -> true | false).
 
 %% Mapping has the potential to change all values.
 -type map_error()   :: {error, {invalid_map_result, {any(), any()}}}.
--type map_fn()      :: fun((Key1::epode_attr(), Value1::epode_value())
+-type map_fun()     :: fun((Key1::epode_attr(), Value1::epode_value())
                          -> Value2::epode_value()).
 
 %% Translation has the potential to change all keys and values.
 -type xlate_error() :: {error, {invalid_xlate_result, {any(), any(), any()}}}.
--type xlate_fn()    :: fun((Key1::epode_attr(), Value1::epode_value())
+-type xlate_fun()   :: fun((Key1::epode_attr(), Value1::epode_value())
                            -> [{epode_attr(), epode_value()}]
-                                  | {Key2::epode_attr(), Value2::epode_value()} | undefined).
+                                  | {Key2::epode_attr(), Value2::epode_value()}
+                                  | undefined).
 
 %% Fold visits all key and value pairs.
 -type fold_error()  :: {error, {invalid_fold_result, any()}}.
--type fold_fn()     :: fun((Key::epode_attr(), Value::epode_value(), AccIn::any())
+-type fold_fun()    :: fun((Key::epode_attr(), Value::epode_value(), AccIn::any())
                            -> AcctOut::any()).
 
--spec filter    (filter_fn(), epode_dict())                                               -> epode_dict() | not_a_dict.
--spec map       (map_fn(),    epode_dict(), epode_all_dict_type())                        -> epode_dict() | not_a_dict | map_error().
--spec xlate     (xlate_fn(),  epode_dict(), epode_all_dict_type(), epode_all_dict_type()) -> epode_dict() | not_a_dict | xlate_error().
--spec fold      (fold_fn(),   AccIn::any(),  epode_dict())                                -> AccOut::any  | not_a_dict | fold_error().
-             
+-spec fold   (fold_fun(), AccIn::any(), epode_dict()) -> AccOut::any  | not_a_dict | fold_error().
+
+-spec map    (map_fun(), epode_bdict(), epode_keyval_binary_type())     -> epode_bdict();
+             (map_fun(), epode_bdict(), epode_keyval_non_binary_type()) -> epode_edict() | map_error();
+             (map_fun(), epode_edict(), epode_keyval_non_binary_type()) -> epode_edict().
+
+-spec xlate  (xlate_fun(), epode_bdict(), epode_bdict_type(), epode_keyval_binary_type())     -> epode_bdict();
+             (xlate_fun(), epode_dict(),  epode_edict_type(), epode_keyval_non_binary_type()) -> epode_edict().
+
+-spec filter (filter_fun(), epode_bdict()) -> epode_bdict();
+             (filter_fun(), epode_edict()) -> epode_edict().
+
+%% Fold across the keyval pairs.
+fold(Fun, Acc0, Dict) ->
+    case dict_type(Dict) of
+        not_a_dict -> not_a_dict;
+        dict       -> dict    :fold  (Fun, Acc0, bare_dict(Dict));
+        orddict    -> orddict :fold  (Fun, Acc0, bare_dict(Dict));
+        vbisect    -> vbisect :foldl (Fun, Acc0, bare_dict(Dict))
+    end.
+
 %% Convert just the values (keeping the old attributes) to generate a new dictionary of the same style.
 map(User_Map_Fn, Dict, New_Keyval_Type) when ?IS_VALID_KEYVAL(New_Keyval_Type) ->
     Map_Fn = possibly_wrap_map_fn(User_Map_Fn, New_Keyval_Type),
@@ -202,15 +217,6 @@ map_to_pure_binary_fn(User_Fn) ->
             case User_Fn(Key, Val) of
                 New_Value when is_binary(New_Value) -> New_Value
             end
-    end.
-
-%% Fold across the keyval pairs.
-fold(Fun, Acc0, Dict) ->
-    case dict_type(Dict) of
-        not_a_dict -> not_a_dict;
-        dict       -> dict    :fold  (Fun, Acc0, bare_dict(Dict));
-        orddict    -> orddict :fold  (Fun, Acc0, bare_dict(Dict));
-        vbisect    -> vbisect :foldl (Fun, Acc0, bare_dict(Dict))
     end.
 
 
@@ -314,7 +320,9 @@ filter(Filter_Fn, Dict) ->
 -spec fetch(binary(), epode_bdict()) -> binary() | no_return;
            (any(),    epode_edict()) -> any()    | no_return.
 
--spec is_key(any(), epode_dict()) -> boolean() | not_a_dict.
+-spec is_key(atom(),   epode_bdict()) -> false;
+            (binary(), epode_bdict()) -> boolean();
+            (any(),    epode_edict()) -> boolean().
 
 -spec values(epode_bdict()) -> [binary()];
             (epode_edict()) -> [any()].
@@ -322,10 +330,12 @@ filter(Filter_Fn, Dict) ->
 -type merge_pure_binary_fun() :: fun((Key::binary(), Value1::binary(), Value2::binary()) -> Value::binary()).
 -type merge_atom_attrs_fun()  :: fun((Key::atom(),   Value1::any(),    Value2::any())    -> Value::any()).
 -type merge_any_fun()         :: fun((Key::any(),    Value1::any(),    Value2::any())    -> Value::any()).
--spec merge(merge_pure_binary_fun(),                   Epode1::epode_bdict(), Epode2::epode_bdict) -> Epode::epode_bdict();
-           (merge_atom_attrs_fun() | merge_any_fun(),  Epode1::epode_edict(), Epode2::epode_edict) -> Epode::epode_edict();
-           (merge_atom_attrs_fun() | merge_any_fun(),  Epode1::epode_bdict(), Epode2::epode_edict) -> not_a_dict;
-           (merge_atom_attrs_fun() | merge_any_fun(),  Epode1::epode_edict(), Epode2::epode_bdict) -> not_a_dict.
+-type merge_non_binary_fun()  :: merge_atom_attrs_fun() | merge_any_fun().
+
+-spec merge(merge_pure_binary_fun(), Epode1::epode_bdict(), Epode2::epode_bdict) -> Epode::epode_bdict() | not_a_dict;
+           (merge_non_binary_fun(),  Epode1::epode_edict(), Epode2::epode_edict) -> Epode::epode_edict();
+           (merge_non_binary_fun(),  Epode1::epode_bdict(), Epode2::epode_edict) -> not_a_dict;
+           (merge_non_binary_fun(),  Epode1::epode_edict(), Epode2::epode_bdict) -> not_a_dict.
 
 size        (Dict) -> ?DICT_DISPATCH(size,        Dict).
 fetch_keys  (Dict) -> ?DICT_DISPATCH(fetch_keys,  Dict).
