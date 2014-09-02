@@ -157,8 +157,8 @@ check_invalid_keyval(_Config) ->
     ct:log("Crash epode_dict:map/2 and xlate/3 function calls with invalid dict internal types"),
     crash = ?CASE_CLAUSE_CRASH ( ?TM:map   (fun map_fn/2,   ?DICT_BAD_DICT,    pure_binary) ),
     crash = ?CASE_CLAUSE_CRASH ( ?TM:map   (fun map_fn/2,   ?ORDDICT_BAD_DICT, pure_binary) ),
-    crash = ?CASE_CLAUSE_CRASH ( ?TM:xlate (fun xlate_fn/2, ?DICT_BAD_DICT,    dict,    pure_binary) ),
-    crash = ?CASE_CLAUSE_CRASH ( ?TM:xlate (fun xlate_fn/2, ?ORDDICT_BAD_DICT, orddict, pure_binary) ),
+    {error, {invalid_xlate_result, _}} = ?TM:xlate (fun xlate_fn/2, ?DICT_BAD_DICT,    dict,    pure_binary),
+    {error, {invalid_xlate_result, _}} = ?TM:xlate (fun xlate_fn/2, ?ORDDICT_BAD_DICT, orddict, pure_binary),
 
     not_a_dict = ?TM:map   (fun map_fn/2,   ?VBISECT_BAD_DICT, pure_binary),
     not_a_dict = ?TM:xlate (fun xlate_fn/2, ?VBISECT_BAD_DICT, dict,    pure_binary),

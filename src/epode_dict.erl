@@ -168,7 +168,8 @@ is_dict(vbisect,            Bare_Dict) -> vbisect:is_vbisect(Bare_Dict).
 %% Translation has the potential to change all keys and values.
 -type xlate_error() :: {error, {invalid_xlate_result, {any(), any(), any()}}}.
 -type xlate_fn()    :: fun((Key1::epode_attr(), Value1::epode_value())
-                           -> {Key2::epode_attr(), Value2::epode_value()} | undefined).
+                           -> [{epode_attr(), epode_value()}]
+                                  | {Key2::epode_attr(), Value2::epode_value()} | undefined).
 
 %% Fold visits all key and value pairs.
 -type fold_error()  :: {error, {invalid_fold_result, any()}}.
@@ -213,52 +214,76 @@ fold(Fun, Acc0, Dict) ->
 
 
 %% Convert both attributes and values to generate a new dictionary.
--define(MAP_XLATE(__Old_Dict_Type, __New_Dict_Type, __New_Keyval_Type, __Fun, __Bare_Dict),
-        {__New_Dict_Type, __New_Keyval_Type,
-         __New_Dict_Type:from_list( xlate_attrs(__Fun, __New_Keyval_Type,
-                                                __Old_Dict_Type:to_list(__Bare_Dict)) )}).
-
 xlate(User_Xlate_Fn, Dict, New_Dict_Type, New_Keyval_Type) when ?IS_VALID_KEYVAL(New_Keyval_Type) ->
     case dict_type(Dict) of
         not_a_dict    -> not_a_dict;
-        Old_Dict_Type -> xlate_valid(Old_Dict_Type, New_Dict_Type, New_Keyval_Type, User_Xlate_Fn, bare_dict(Dict))
+        Old_Dict_Type -> xlate_valid(Old_Dict_Type, New_Dict_Type, New_Keyval_Type,
+                                     User_Xlate_Fn, bare_dict(Dict))
     end;
 xlate(_Fn, Dict, New_Dict_Type, New_Keyval_Type) ->
-    {error, {invalid_xlate_result, {dict_type(Dict), New_Dict_Type, New_Keyval_Type}}}.
+    xlate_error(dict_type(Dict), New_Dict_Type, New_Keyval_Type).
 
-xlate_valid(Old_Dict_Type, vbisect, pure_binary, User_Xlate_Fn, Bare_Dict) ->
-    ?MAP_XLATE(Old_Dict_Type, vbisect, pure_binary, User_Xlate_Fn, Bare_Dict);
-xlate_valid(Old_Dict_Type, New_Dict_Type, New_Keyval_Type, User_Xlate_Fn, Bare_Dict)
+xlate_valid(Old_Dict_Type, vbisect, pure_binary, User_Xlate_Fun, Bare_Dict) ->
+    case xlate_attrs(Old_Dict_Type, vbisect, pure_binary, User_Xlate_Fun, Bare_Dict) of
+        {error, Error}   -> {error, Error};
+        New_Keyval_Pairs -> {vbisect, pure_binary, vbisect:from_list(New_Keyval_Pairs)}
+    end;
+xlate_valid(Old_Dict_Type, New_Dict_Type, New_Keyval_Type, User_Xlate_Fun, Bare_Dict)
   when New_Dict_Type =/= vbisect ->
-    ?MAP_XLATE(Old_Dict_Type, New_Dict_Type, New_Keyval_Type, User_Xlate_Fn, Bare_Dict);
-xlate_valid(Old_Dict_Type, New_Dict_Type, New_Keyval_Type, _User_Xlate_Fn, _Bare_Dict) ->
-    {error, {invalid_xlate_result, {Old_Dict_Type, New_Dict_Type, New_Keyval_Type}}}.
-
-
+    case xlate_attrs(Old_Dict_Type, New_Dict_Type, New_Keyval_Type, User_Xlate_Fun, Bare_Dict) of
+        {error, Error}   -> {error, Error};
+        New_Keyval_Pairs -> {New_Dict_Type, New_Keyval_Type, New_Dict_Type:from_list(New_Keyval_Pairs)}
+    end;
+%% Catch all can only be vbisect without pure_binary attributes.
+xlate_valid(Old_Dict_Type, New_Dict_Type, New_Keyval_Type, _User_Xlate_Fn, _Dict) ->
+    xlate_error(Old_Dict_Type, New_Dict_Type, New_Keyval_Type).
+    
 %% TODO: This function needs to systematically handle generating duplicate attributes.
-xlate_attrs(Xlate_Fn, New_Keyval_Type, Keyval_Pairs) ->
-    lists:foldl(fun({Attr, Value}, New_Pair_List) ->
-                        case {New_Keyval_Type, Xlate_Fn(Attr, Value)} of
+xlate_attrs(Old_Dict_Type, New_Dict_Type, New_Keyval_Type, Xlate_Fun, Old_Bare_Dict) ->
+    try
+        lists:foldl(fun({Attr, Value}, New_Pair_List) ->
+                     case Xlate_Fun(Attr, Value) of
+                         
+                         %% More than one attribute / value pair is produced...
+                         New_Attr_List when is_list(New_Attr_List) ->
+                             case lists:all(xlate_prepend_fun(New_Keyval_Type), New_Attr_List) of
+                                 true  -> New_Attr_List ++ New_Pair_List;
+                                 false -> throw(xlate_error(Old_Dict_Type, New_Dict_Type, New_Keyval_Type))
+                             end;
 
-                            %% Both Attribute and Value must be binary...
-                            {pure_binary, {_New_Attr, _New_Value} = New_Pair}
-                              when is_binary(_New_Attr), is_binary(_New_Value) -> 
-                                [New_Pair | New_Pair_List];
+                         %% One attribute / value pair is produced...
+                         {_Attr, _Value} = New_Attr_Pair ->
+                             Valid_Fun = xlate_prepend_fun(New_Keyval_Type),
+                             case Valid_Fun(New_Attr_Pair) of
+                                 true  -> [New_Attr_Pair | New_Pair_List];
+                                 false -> throw(xlate_error(Old_Dict_Type, New_Dict_Type, New_Keyval_Type))
+                             end;
 
-                            %% Attribute must be atom, Value can be anything...
-                            {atom_attrs, {_New_Attr, _New_Value} = New_Pair}
-                              when is_atom(_New_Attr) ->
-                                [New_Pair | New_Pair_List];
+                         %% Attribute is dropped from new dictionary results.
+                         undefined ->
+                             New_Pair_List
+                     end
+             end, [], Old_Dict_Type:to_list(Old_Bare_Dict))
+    catch
+        throw:Error -> Error
+    end.   
 
-                            %% Both Attribute and Value can be anything...
-                            {any, {_New_Attr, _New_Value} = New_Pair} ->
-                                [New_Pair | New_Pair_List];
+xlate_valid_pure_binary_attr_pair({_Attr_Elem, _Value_Elem})
+  when is_binary(_Attr_Elem), is_binary(_Value_Elem) -> true;
+xlate_valid_pure_binary_attr_pair(                _) -> false.
+    
+xlate_valid_atom_attr_pair({Attr_Elem, _Value_Elem}) when is_atom(Attr_Elem) -> true;
+xlate_valid_atom_attr_pair(                       _)                         -> false.
+    
+xlate_valid_any_attr_pair({_Attr_Elem, _Value_Elem}) -> true;
+xlate_valid_any_attr_pair(                        _) -> false.
 
-                            %% Attribute is dropped from new dictionary results.
-                            {New_Keyval_Type, undefined} ->
-                                New_Pair_List
-                        end
-                end, [], Keyval_Pairs).
+xlate_prepend_fun(pure_binary) -> fun xlate_valid_pure_binary_attr_pair/1;
+xlate_prepend_fun(atom_attrs)  -> fun xlate_valid_atom_attr_pair/1;
+xlate_prepend_fun(any)         -> fun xlate_valid_any_attr_pair/1.
+        
+xlate_error(Old_Dict_Type, New_Dict_Type, New_Keyval_Type) ->
+    {error, {invalid_xlate_result, {Old_Dict_Type, New_Dict_Type, New_Keyval_Type}}}.
 
 filter(Filter_Fn, Dict) ->
     case dict_type(Dict) of
