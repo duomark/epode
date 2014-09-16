@@ -45,6 +45,7 @@
 
 -type epode_dict()           :: epode_any_dict() | epode_atom_dict() | epode_bin_dict().
 
-%% An epode "object" is an epode_dict() tagged with a user defined "object type"
--type user_defined_epode_type() :: atom().
--type epode(User_Defined_Epode_Type, Epode_Dict) :: {User_Defined_Epode_Type, Epode_Dict}.
+-type dict_list(Key_Type, Val_Type) :: [{Key_Type, Val_Type}].
+-type binary_dict_list() :: dict_list(binary(), binary()).
+-type atom_dict_list()   :: dict_list(atom(),   any()).
+-type any_dict_list()    :: dict_list(any(),    any()).
