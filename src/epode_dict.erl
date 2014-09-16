@@ -41,6 +41,30 @@
 
 -include("../include/epode.hrl").
 
+%% Filter removes attributes by visiting every element.
+-type filter_fun()  :: fun((Key::epode_attr(), Value::epode_value()) -> true | false).
+
+%% Mapping has the potential to change all values.
+-type map_error()   :: {error, {invalid_map_result, {any(), any()}}}.
+-type map_fun()     :: fun((Key1::epode_attr(), Value1::epode_value())
+                         -> Value2::epode_value()).
+
+%% Translation has the potential to change all keys and values.
+-type xlate_error() :: {error, {invalid_xlate_result, {any(), any(), any()}}}.
+-type xlate_fun()   :: fun((Key1::epode_attr(), Value1::epode_value())
+                           -> [{epode_attr(), epode_value()}]
+                                  | {Key2::epode_attr(), Value2::epode_value()}
+                                  | undefined).
+
+%% Fold visits all key and value pairs.
+-type fold_error()  :: {error, {invalid_fold_result, any()}}.
+-type fold_fun()    :: fun((Key::epode_attr(), Value::epode_value(), AccIn::any())
+                           -> AcctOut::any()).
+
+-export_type([filter_fun/0, map_fun/0,   xlate_fun/0,   fold_fun/0,
+                            map_error/0, xlate_error/0, fold_error/0]).
+
+%% Macro definitions
 -define(DICT_DISPATCH(__Fun_Name, __Dict),
         case dict_type(__Dict) of
             dict       -> dict    :__Fun_Name(bare_dict(Dict));
@@ -61,11 +85,7 @@
 %% Construct and validate dictionary types
 %%%------------------------------------------------------------------------------
 
--type dict_list(Key_Type, Val_Type) :: [{Key_Type, Val_Type}].
--type binary_dict_list() :: dict_list(binary(), binary()).
--type atom_dict_list()   :: dict_list(atom(),   any()).
--type any_dict_list()    :: dict_list(any(),    any()).
--type dict_type_error()  :: {error, {invalid_types, {any(), any()}}}.
+%% -type dict_type_error()  :: {error, {invalid_types, {any(), any()}}}.
 
 -spec new (epode_bdict_type(), epode_keyval_binary_type())     -> epode_bdict();
           (epode_edict_type(), epode_keyval_non_binary_type()) -> epode_edict().
@@ -155,26 +175,6 @@ is_dict(vbisect,            Bare_Dict) -> vbisect:is_vbisect(Bare_Dict).
 %%%------------------------------------------------------------------------------
 %% API for converting attributes and values
 %%%------------------------------------------------------------------------------
-
-%% Filter removes attributes by visiting every element.
--type filter_fun()  :: fun((Key::epode_attr(), Value::epode_value()) -> true | false).
-
-%% Mapping has the potential to change all values.
--type map_error()   :: {error, {invalid_map_result, {any(), any()}}}.
--type map_fun()     :: fun((Key1::epode_attr(), Value1::epode_value())
-                         -> Value2::epode_value()).
-
-%% Translation has the potential to change all keys and values.
--type xlate_error() :: {error, {invalid_xlate_result, {any(), any(), any()}}}.
--type xlate_fun()   :: fun((Key1::epode_attr(), Value1::epode_value())
-                           -> [{epode_attr(), epode_value()}]
-                                  | {Key2::epode_attr(), Value2::epode_value()}
-                                  | undefined).
-
-%% Fold visits all key and value pairs.
--type fold_error()  :: {error, {invalid_fold_result, any()}}.
--type fold_fun()    :: fun((Key::epode_attr(), Value::epode_value(), AccIn::any())
-                           -> AcctOut::any()).
 
 -spec fold   (fold_fun(), AccIn::any(), epode_dict()) -> AccOut::any  | not_a_dict | fold_error().
 
